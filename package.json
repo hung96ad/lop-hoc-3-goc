@@ -1,0 +1,28 @@
+{
+  "name": "ck3g-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nền tảng thi trực tuyến tích hợp AI Agent tiếng Việt",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "start:web": "npm --prefix apps/web run start",
+    "test:web": "npm --prefix apps/web test",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  },
+  "keywords": [
+    "education",
+    "exam",
+    "ai-agent",
+    "vietnamese",
+    "fastapi",
+    "nextjs"
+  ],
+  "author": "Tech Lead Architect",
+  "license": "MIT"
+}
