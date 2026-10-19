@@ -4,7 +4,10 @@
 
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #12313b;
+  --gnh-teal: #087b91;
+  --gnh-teal-dark: #075c6e;
+  --gnh-orange: #f7941d;
 }
 
 body {
@@ -12,3 +15,12 @@ body {
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Shared teal-and-orange palette inspired by the reference site. */
+.bg-blue-600, .bg-indigo-600 { background-color: var(--gnh-teal) !important; }
+.hover\\:bg-blue-700:hover, .hover\\:bg-indigo-700:hover { background-color: var(--gnh-teal-dark) !important; }
+.text-blue-600, .text-blue-700, .text-indigo-600, .text-indigo-700 { color: var(--gnh-teal) !important; }
+.bg-blue-50, .bg-indigo-50 { background-color: #eaf5f6 !important; }
+.border-blue-200 { border-color: #c9e3e7 !important; }
+.selection\\:bg-blue-200::selection { background-color: #fce3c3; }
+.gnh-accent { color: var(--gnh-orange); }

@@ -176,8 +176,9 @@ export default function StudentDashboardPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {assignments.map((asg) => {
               const latestAttempt = asg.attempts && asg.attempts.length > 0 ? asg.attempts[asg.attempts.length - 1] : null;
-              const hasFinalized = asg.attempts?.some((a) => a.status === "finalized");
-              const finalizedAttempt = asg.attempts?.find((a) => a.status === "finalized");
+              const hasPublishedAttempt = asg.attempts?.some((a) => a.status === "finalized" || a.status === "pending_review");
+              const publishedAttempt = asg.attempts?.slice().reverse().find((a) => a.status === "finalized" || a.status === "pending_review");
+              const isGrading = latestAttempt?.status === "grading";
 
               return (
                 <div
@@ -231,21 +232,28 @@ export default function StudentDashboardPage() {
                       </div>
                     )}
 
-                    {/* View results button if finalized */}
-                    {hasFinalized && finalizedAttempt && (
+                    {/* View results button if published (either AI-graded or finalized) */}
+                    {hasPublishedAttempt && publishedAttempt && (
                       <Link
-                        href={`/student/results/${finalizedAttempt.id}`}
+                        href={`/student/results/${publishedAttempt.id}`}
                         className="w-full py-2 px-4 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-2"
                       >
                         <Award className="h-4 w-4 text-emerald-600" />
-                        <span>Xem kết quả & Đánh giá 3 Gốc ({finalizedAttempt.final_score} pts)</span>
+                        <span>
+                          Xem kết quả & Đánh giá 3 Gốc ({publishedAttempt.final_score !== null ? `${publishedAttempt.final_score} pts` : "Đã có kết quả"})
+                          {publishedAttempt.status === "pending_review" && " • AI chấm"}
+                        </span>
                       </Link>
                     )}
 
-                    {latestAttempt && latestAttempt.status !== "finalized" && latestAttempt.status !== "in_progress" && (
-                      <div className="p-2.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-xs text-center font-medium">
-                        Bài làm đã nộp • Đang chờ giáo viên duyệt & công bố điểm
-                      </div>
+                    {isGrading && latestAttempt && (
+                      <Link
+                        href={`/student/results/${latestAttempt.id}`}
+                        className="p-2.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs text-center font-medium flex items-center justify-center gap-2 hover:bg-indigo-100 transition"
+                      >
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+                        <span>Bài làm đã nộp • AI đang chấm điểm (Bấm để xem)</span>
+                      </Link>
                     )}
                   </div>
                 </div>

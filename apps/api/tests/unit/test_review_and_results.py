@@ -97,11 +97,13 @@ async def test_teacher_review_override_audit_and_student_results():
         await ac.post(f"/api/v1/student/attempts/{attempt_id}/submit", headers=s_headers)
         await asyncio.sleep(0.5)  # Wait for AI assessment
 
-        # 5. Student checks results BEFORE teacher finalizes (Should be hidden/masked)
+        # 5. Student checks results after AI assessment (Automatically graded and published with AI score)
         pre_res = await ac.get(f"/api/v1/student/attempts/{attempt_id}/results", headers=s_headers)
         assert pre_res.status_code == 200
-        assert pre_res.json()["is_published"] is False
-        assert pre_res.json()["final_score"] is None
+        assert pre_res.json()["is_published"] is True
+        assert pre_res.json()["final_score"] is not None
+        assert pre_res.json()["grade_source"] == "ai"
+        assert pre_res.json()["is_teacher_reviewed"] is False
 
         # 6. Teacher inspects grading overview
         review_view_res = await ac.get(f"/api/v1/teacher/attempts/{attempt_id}/review", headers=t_headers)

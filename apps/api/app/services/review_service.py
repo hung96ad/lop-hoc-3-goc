@@ -251,7 +251,7 @@ class ReviewService:
             Attempt.student_id == student_id
         ).options(
             selectinload(Attempt.assignment).selectinload(ExamAssignment.exam),
-            selectinload(Attempt.answers).selectinload(Answer.grading_result),
+            selectinload(Attempt.answers).selectinload(Answer.grading_result).selectinload(GradingResult.reviews),
             selectinload(Attempt.answers).selectinload(Answer.ai_analyses)
         )
         res = await db.execute(query)
@@ -259,9 +259,9 @@ class ReviewService:
         if not attempt:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Attempt not found")
 
-        is_published = (attempt.status == AttemptStatus.FINALIZED.value)
+        is_published = attempt.status in [AttemptStatus.FINALIZED.value, AttemptStatus.PENDING_REVIEW.value]
         if not is_published:
-            # Mask sensitive points until finalized
+            # Mask sensitive points until finalized or AI evaluation completed
             return StudentResultResponse(
                 attempt_id=attempt.id,
                 exam_title=attempt.assignment.exam.title,
@@ -271,24 +271,40 @@ class ReviewService:
                 essay_score=None,
                 final_score=None,
                 teacher_feedback=None,
-                ai_feedback=None
+                ai_feedback=None,
+                ai_essay_score=None,
+                is_teacher_reviewed=False,
+                grade_source="ai"
             )
 
         # Aggregate teacher feedback and allowed AI feedback
         feedbacks = []
         ai_pedagogy = None
+        total_ai_essay = Decimal("0.00")
+        has_teacher_review = (attempt.status == AttemptStatus.FINALIZED.value)
+
         for a in attempt.answers:
-            if a.grading_result and a.grading_result.teacher_feedback:
-                feedbacks.append(a.grading_result.teacher_feedback)
+            if a.grading_result:
+                if a.grading_result.teacher_feedback:
+                    feedbacks.append(a.grading_result.teacher_feedback)
+                if a.grading_result.ai_suggested_score is not None:
+                    total_ai_essay += a.grading_result.ai_suggested_score
+                if a.grading_result.reviews and len(a.grading_result.reviews) > 0:
+                    has_teacher_review = True
+                if a.grading_result.graded_by is not None:
+                    has_teacher_review = True
+
             if a.ai_analyses:
                 latest = a.ai_analyses[0]
                 ai_pedagogy = {
                     "three_roots": latest.three_roots_analysis,
-                    "transformative_advice": latest.pedagogical_feedback.get("transformative_advice"),
-                    "practical_action_plan": latest.pedagogical_feedback.get("practical_action_plan")
+                    "three_poisons": latest.three_poisons_analysis,
+                    "overall_reflection": latest.pedagogical_feedback.get("overall_reflection") if isinstance(latest.pedagogical_feedback, dict) else None,
+                    "transformative_advice": latest.pedagogical_feedback.get("transformative_advice") if isinstance(latest.pedagogical_feedback, dict) else None,
+                    "practical_action_plan": latest.pedagogical_feedback.get("practical_action_plan") if isinstance(latest.pedagogical_feedback, dict) else None
                 }
 
-        combined_feedback = "\n".join(feedbacks) if feedbacks else "Bài làm tốt."
+        combined_feedback = "\n".join(feedbacks) if feedbacks else ("Đã được giáo viên duyệt" if has_teacher_review else "")
 
         return StudentResultResponse(
             attempt_id=attempt.id,
@@ -298,6 +314,9 @@ class ReviewService:
             objective_score=attempt.objective_score,
             essay_score=attempt.essay_score,
             final_score=attempt.final_score,
-            teacher_feedback=combined_feedback,
-            ai_feedback=ai_pedagogy
+            teacher_feedback=combined_feedback if combined_feedback else None,
+            ai_feedback=ai_pedagogy,
+            ai_essay_score=total_ai_essay,
+            is_teacher_reviewed=has_teacher_review,
+            grade_source="teacher" if has_teacher_review else "ai"
         )

@@ -137,3 +137,94 @@ async def test_full_taking_and_objective_grading_flow():
         assert sub_data["status"] == "finalized"
         assert Decimal(str(sub_data["objective_score"])) == Decimal("10.00")
         assert sub_data["is_fully_graded"] is True
+
+
+@pytest.mark.asyncio
+async def test_chatbot_guest_entry_and_instant_grading_flow():
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        # 1. Teacher creates Class and Exam
+        t_res = await ac.post("/api/v1/auth/register", json={
+            "email": "teacher_bot@example.com",
+            "password": "Password123!",
+            "full_name": "Thầy Giáo Khảo Thí",
+            "role": "teacher"
+        })
+        t_token = t_res.json()["access_token"]
+        t_headers = {"Authorization": f"Bearer {t_token}"}
+
+        c_res = await ac.post("/api/v1/classes", json={"name": "Lớp Chánh Kiến Online"}, headers=t_headers)
+        class_id = c_res.json()["id"]
+
+        q_res = await ac.post("/api/v1/questions", json={
+            "type": "single_choice",
+            "content": "3 Gốc bao gồm những yếu tố nào?",
+            "default_points": "10.00",
+            "options": [
+                {"content": "Đạo đức - Trí tuệ - Nghị lực", "is_correct": True, "order_index": 0},
+                {"content": "Tham - Sân - Si", "is_correct": False, "order_index": 1}
+            ]
+        }, headers=t_headers)
+        q_id = q_res.json()["id"]
+
+        exam_res = await ac.post("/api/v1/exams", json={
+            "title": "Khảo Sát Đầu Giờ 3 Gốc",
+            "duration_minutes": 15,
+            "total_score": "10.00",
+            "questions": [{"question_id": q_id, "points": "10.00", "order_index": 0}]
+        }, headers=t_headers)
+        exam_id = exam_res.json()["id"]
+        await ac.post(f"/api/v1/exams/{exam_id}/publish", headers=t_headers)
+
+        now = datetime.now(timezone.utc)
+        await ac.post("/api/v1/exams/assignments", json={
+            "exam_id": exam_id,
+            "class_id": class_id,
+            "open_at": (now - timedelta(minutes=5)).isoformat(),
+            "close_at": (now + timedelta(hours=2)).isoformat(),
+            "max_attempts": 2,
+            "auto_publish_results": True
+        }, headers=t_headers)
+
+        # 2. Guest checks public classes (no login required)
+        public_classes_res = await ac.get("/api/v1/classes/public")
+        assert public_classes_res.status_code == 200
+        classes = public_classes_res.json()
+        assert any(c["id"] == class_id for c in classes)
+
+        # 3. Guest enters via Chatbot entry (name, phone, class_id - no code required)
+        guest_res = await ac.post("/api/v1/auth/guest-entry", json={
+            "full_name": "Học Viên Vãng Lai",
+            "phone": "0987654321",
+            "class_id": class_id
+        })
+        assert guest_res.status_code == 200
+        guest_data = guest_res.json()
+        assert guest_data["full_name"] == "Học Viên Vãng Lai"
+        assignment_id = guest_data["assignment_id"]
+        guest_headers = {"Authorization": f"Bearer {guest_data['access_token']}"}
+
+        # 4. Start exam
+        start_res = await ac.post(f"/api/v1/student/assignments/{assignment_id}/start", headers=guest_headers)
+        assert start_res.status_code == 200
+        attempt_id = start_res.json()["attempt_id"]
+        q_item = start_res.json()["questions"][0]
+        correct_opt = [o["id"] for o in q_item["options"] if "Đạo đức" in o["content"]]
+
+        # 5. Answer question
+        ans_res = await ac.put(f"/api/v1/student/attempts/{attempt_id}/answers", json={
+            "exam_question_id": q_item["exam_question_id"],
+            "selected_option_ids": correct_opt,
+            "client_version": 1
+        }, headers=guest_headers)
+        assert ans_res.status_code == 200
+
+        # 6. Submit exam
+        sub_res = await ac.post(f"/api/v1/student/attempts/{attempt_id}/submit", headers=guest_headers)
+        assert sub_res.status_code == 200
+        assert sub_res.json()["is_fully_graded"] is True
+
+        # 7. Check instant AI result
+        res_check = await ac.get(f"/api/v1/student/attempts/{attempt_id}/results", headers=guest_headers)
+        assert res_check.status_code == 200
+        assert Decimal(str(res_check.json()["final_score"])) == Decimal("10.00")

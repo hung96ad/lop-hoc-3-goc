@@ -23,6 +23,7 @@ class User(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[str] = mapped_column(String(20), default="", nullable=False)
     role: Mapped[UserRole] = mapped_column(
         String(20),
         default=UserRole.STUDENT.value,

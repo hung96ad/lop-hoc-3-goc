@@ -77,7 +77,7 @@ class ExamTakingService:
                         "status": att.status,
                         "started_at": _ensure_utc(att.started_at),
                         "submitted_at": _ensure_utc(att.submitted_at),
-                        "final_score": float(att.final_score) if att.status == "finalized" else None
+                        "final_score": float(att.final_score) if att.status in ["finalized", "pending_review"] else None
                     }
                     for att in student_attempts
                 ]
@@ -337,19 +337,16 @@ class ExamTakingService:
         attempt.final_score = total_objective
 
         if not has_essay:
-            # 100% objective questions -> Can finalize immediately if auto_publish is set
-            if attempt.assignment.auto_publish_results:
-                attempt.status = AttemptStatus.FINALIZED.value
-            else:
-                attempt.status = AttemptStatus.PENDING_REVIEW.value
+            # 100% objective questions -> Can finalize immediately and auto-publish
+            attempt.status = AttemptStatus.FINALIZED.value
             await db.commit()
             return SubmitAttemptResponse(
                 attempt_id=attempt.id,
                 status=attempt.status,
                 submitted_at=now,
                 objective_score=total_objective,
-                is_fully_graded=(attempt.status == AttemptStatus.FINALIZED.value),
-                message="Đã chấm trắc nghiệm xong."
+                is_fully_graded=True,
+                message="Đã tự động chấm điểm và công bố kết quả."
             )
         else:
             # Contains essay questions -> Move to GRADING and dispatch AI background task
@@ -360,11 +357,24 @@ class ExamTakingService:
             for ans_id in essay_answer_ids:
                 await enqueue_job("evaluate_essay_answer", answer_id=ans_id)
 
+            if not essay_answer_ids:
+                await db.refresh(attempt)
+                attempt.status = AttemptStatus.FINALIZED.value
+                await db.commit()
+                return SubmitAttemptResponse(
+                    attempt_id=attempt.id,
+                    status=attempt.status,
+                    submitted_at=now,
+                    objective_score=total_objective,
+                    is_fully_graded=True,
+                    message="Đã tự động chấm điểm và công bố kết quả."
+                )
+
             return SubmitAttemptResponse(
                 attempt_id=attempt.id,
                 status=attempt.status,
                 submitted_at=now,
                 objective_score=total_objective,
                 is_fully_graded=False,
-                message="Bài thi đã được nộp. Câu tự luận đang được hệ thống AI phân tích."
+                message="Bài thi đã được nộp. Hệ thống AI đang tự động chấm điểm tự luận và sẽ công bố kết quả ngay khi hoàn tất."
             )

@@ -214,18 +214,26 @@ export default function AttemptReviewPage() {
             <ArrowLeft className="h-4 w-4" /> Trở về Tổng quan
           </Link>
           <h1 className="text-2xl font-bold text-slate-900">
-            Thẩm định & Chấm bài thi
+            Thẩm định & Điều chỉnh điểm thi
           </h1>
           <p className="text-xs text-slate-500 mt-1">
             Đề thi: <strong className="text-slate-800">{review.exam_title}</strong> • Mã bài làm: {review.attempt_id}
+          </p>
+          <p className="text-2xs text-blue-600 font-medium mt-0.5">
+            * Điểm số đã được AI tự động chấm và công bố cho học viên. Giáo viên có quyền chỉnh sửa lại điểm số và nhận xét.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           {review.status === "finalized" ? (
-            <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-              <CheckCircle2 className="h-4 w-4" /> Đã chốt điểm chính thức
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                <CheckCircle2 className="h-4 w-4" /> Đã chốt điểm chính thức
+              </span>
+              <span className="text-2xs text-slate-400">
+                (Vẫn có thể điều chỉnh lại điểm nếu cần)
+              </span>
+            </div>
           ) : (
             <button
               onClick={handleFinalize}
@@ -237,7 +245,7 @@ export default function AttemptReviewPage() {
               ) : (
                 <CheckCircle2 className="h-4 w-4" />
               )}
-              <span>Chốt điểm & Xuất bản cho học sinh</span>
+              <span>Chốt điểm & Xác nhận kết quả</span>
             </button>
           )}
         </div>

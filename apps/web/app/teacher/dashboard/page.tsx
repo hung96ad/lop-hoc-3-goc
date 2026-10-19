@@ -13,7 +13,9 @@ import {
   CheckCircle2, 
   AlertCircle,
   RefreshCw,
-  Award
+  Award,
+  Sparkles,
+  Loader2
 } from "lucide-react";
 import { apiFetch } from "../../../lib/api";
 
@@ -215,10 +217,16 @@ export default function TeacherDashboardPage() {
                       <Clock className="h-3 w-3" /> {att.status}
                     </span>
                   );
-                  if (att.status === "pending_review" || att.status === "grading") {
+                  if (att.status === "pending_review") {
+                    statusBadge = (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        <Sparkles className="h-3 w-3" /> AI đã chấm (Chờ duyệt)
+                      </span>
+                    );
+                  } else if (att.status === "grading") {
                     statusBadge = (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                        <AlertCircle className="h-3 w-3" /> Chờ chấm duyệt
+                        <Loader2 className="h-3 w-3 animate-spin" /> Đang chấm AI
                       </span>
                     );
                   } else if (att.status === "finalized") {

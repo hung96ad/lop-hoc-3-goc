@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Navbar from "../../components/Navbar";
 import { getSavedAuth, AuthTokens } from "../../lib/api";
 import { Loader2 } from "lucide-react";
@@ -11,19 +10,14 @@ export default function StudentLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
   const [auth, setAuth] = useState<AuthTokens | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const saved = getSavedAuth();
-    if (!saved || saved.role !== "student") {
-      router.push("/login");
-    } else {
-      setAuth(saved);
-      setLoading(false);
-    }
-  }, [router]);
+    if (saved?.role === "student") setAuth(saved);
+    setLoading(false);
+  }, []);
 
   if (loading) {
     return (

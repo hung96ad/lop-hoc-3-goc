@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BookOpen, GraduationCap, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { BookOpen, GraduationCap, ShieldCheck, CheckCircle2, Bot, Sparkles } from "lucide-react";
 import Navbar from "../components/Navbar";
 
 export default function HomePage() {
@@ -19,7 +19,7 @@ export default function HomePage() {
 
         <h1 className="text-4xl sm:text-6xl font-extrabold text-slate-900 tracking-tight max-w-4xl">
           Nền tảng thi trực tuyến thông minh dành cho{" "}
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-orange-500">
             Giáo viên & Học viên
           </span>
         </h1>
@@ -28,6 +28,27 @@ export default function HomePage() {
           Quản lý ngân hàng câu hỏi, tạo đề thi linh hoạt, tự động chấm trắc nghiệm và sử dụng AI Agent 
           tiếng Việt phân tích bài tự luận theo triết lý 3 Gốc (Đạo đức - Trí tuệ - Nghị lực) và 3 Độc (Tham - Sân - Si).
         </p>
+
+        {/* Chatbot CTA Banner */}
+        <div className="mt-8 p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-indigo-700 via-indigo-600 to-blue-600 text-white shadow-lg w-full max-w-3xl flex flex-col sm:flex-row items-center justify-between gap-6 text-left">
+          <div className="space-y-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/20 text-white text-xs font-bold backdrop-blur">
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>DÀNH CHO HỌC VIÊN • KHÔNG CẦN ĐĂNG NHẬP</span>
+            </div>
+            <h2 className="text-2xl font-extrabold tracking-tight">Chatbot Khảo Thí 3 Gốc</h2>
+            <p className="text-sm text-indigo-100 max-w-md">
+              Chỉ cần điền tên, số điện thoại và chọn lớp học (không cần mã) là có thể tương tác trực tiếp qua khung chat để làm bài. Sau khi nộp bài, AI sẽ tự động chấm điểm và đánh giá ngay lập tức!
+            </p>
+          </div>
+          <Link
+            href="/chatbot"
+            className="px-6 py-3.5 rounded-xl bg-white text-indigo-700 font-bold hover:bg-indigo-50 shadow-md hover:shadow-lg transition flex items-center gap-2 shrink-0 text-sm"
+          >
+            <Bot className="h-5 w-5 text-indigo-600" />
+            <span>Mở Chatbot Làm Bài &rarr;</span>
+          </Link>
+        </div>
 
         {/* Portals CTA */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-3xl mt-12">

@@ -120,6 +120,11 @@ export default function ExamTakingPage() {
   useEffect(() => {
     let mounted = true;
     const startExam = async () => {
+      const savedAuth = typeof window !== "undefined" ? localStorage.getItem("ck3g_auth") : null;
+      if (!savedAuth) {
+        router.replace(`/guest?assignment=${encodeURIComponent(assignmentId)}`);
+        return;
+      }
       try {
         setLoading(true);
         setError(null);
@@ -353,8 +358,8 @@ export default function ExamTakingPage() {
           </div>
 
           <div>
-            <h1 className="text-2xl font-black text-slate-900">Nộp bài thi thành công!</h1>
-            <p className="text-sm text-slate-500 mt-1">Bài làm của bạn đã được hệ thống ghi nhận an toàn</p>
+            <h1 className="text-2xl font-black text-slate-900">Nộp bài & Tự động chấm điểm thành công!</h1>
+            <p className="text-sm text-slate-500 mt-1">Bài làm của bạn đã được hệ thống ghi nhận và tự động đánh giá</p>
           </div>
 
           {/* Instant Objective Score Card */}
@@ -366,17 +371,26 @@ export default function ExamTakingPage() {
               {submitResult.objective_score.toFixed(2)} pts
             </p>
             <p className="text-xs text-slate-500">
-              * Phần câu hỏi tự luận đang được AI Agent 3 Gốc phân tích và gửi đến giáo viên thẩm định, chốt điểm chính thức.
+              * Phần câu hỏi tự luận được hệ thống AI 3 Gốc tự động chấm điểm và công bố ngay. Giáo viên có quyền thẩm định và điều chỉnh lại điểm số.
             </p>
           </div>
 
-          <Link
-            href="/student/dashboard"
-            className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl shadow-md transition flex items-center justify-center gap-2"
-          >
-            <span>Về Không gian Học viên</span>
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          <div className="flex flex-col gap-3">
+            <Link
+              href={`/student/results/${attempt.attempt_id}`}
+              className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl shadow-md transition flex items-center justify-center gap-2"
+            >
+              <span>Xem ngay kết quả & Báo cáo 3 Gốc</span>
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+
+            <Link
+              href="/student/dashboard"
+              className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-xl transition flex items-center justify-center gap-2"
+            >
+              <span>Về Không gian Học viên</span>
+            </Link>
+          </div>
         </div>
       </div>
     );

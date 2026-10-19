@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { BrainCircuit, LogOut, User, BookOpen, GraduationCap, LayoutDashboard, FileQuestion, Library, School } from "lucide-react";
+import { BrainCircuit, LogOut, User, BookOpen, GraduationCap, LayoutDashboard, FileQuestion, Library, School, Bot } from "lucide-react";
 import { getSavedAuth, clearAuth, AuthTokens } from "../lib/api";
 
 export default function Navbar() {
@@ -100,6 +100,16 @@ export default function Navbar() {
       </div>
 
       <div className="flex items-center gap-3">
+        <Link
+          href="/chatbot"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-gradient-to-r from-indigo-50 to-blue-50 text-indigo-700 border border-indigo-200 hover:from-indigo-100 hover:to-blue-100 transition shadow-2xs"
+        >
+          <Bot className="h-4 w-4 text-indigo-600" />
+          <span className="hidden sm:inline">Chatbot Khảo Thí</span>
+          <span className="sm:hidden">Chatbot</span>
+          <span className="text-[10px] bg-indigo-600 text-white px-1.5 py-0.2 rounded-full font-bold">AI</span>
+        </Link>
+
         {auth ? (
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-sm bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200">

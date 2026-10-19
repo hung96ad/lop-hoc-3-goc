@@ -74,3 +74,6 @@ class StudentResultResponse(BaseModel):
     final_score: Optional[Decimal] = None
     teacher_feedback: Optional[str] = None
     ai_feedback: Optional[Dict[str, Any]] = None
+    ai_essay_score: Optional[Decimal] = None
+    is_teacher_reviewed: bool = False
+    grade_source: str = "ai"

@@ -5,11 +5,33 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.db.session import get_db
 from app.models.classes import Class, Enrollment
+from app.models.exams import ExamAssignment
 from app.models.users import User, UserRole
 from app.schemas.class_schema import ClassCreate, ClassRead, EnrollRequest
 from app.api.deps import get_current_user, get_current_teacher, get_current_student
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
+
+
+@router.get("/public", response_model=List[ClassRead])
+async def list_public_classes(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Class).order_by(Class.name))
+    classes = result.scalars().all()
+    output = []
+    for class_obj in classes:
+        asg_res = await db.execute(
+            select(ExamAssignment).where(ExamAssignment.class_id == class_obj.id).limit(1)
+        )
+        if asg_res.scalar_one_or_none():
+            output.append(ClassRead(
+                id=class_obj.id,
+                name=class_obj.name,
+                code=class_obj.code,
+                teacher_id=class_obj.teacher_id,
+                created_at=class_obj.created_at,
+                student_count=0
+            ))
+    return output
 
 
 @router.get("", response_model=List[ClassRead])

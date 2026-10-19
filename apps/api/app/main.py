@@ -19,6 +19,21 @@ async def _run_schema_migrations(conn):
     """Apply create_all then patch any missing columns on existing tables."""
     await conn.run_sync(Base.metadata.create_all)
 
+    # Patch: add guest learner phone field to existing user tables.
+    dialect = conn.dialect.name
+    if dialect == "postgresql":
+        await conn.execute(
+            __import__("sqlalchemy").text(
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(20) NOT NULL DEFAULT ''"
+            )
+        )
+    elif dialect == "sqlite":
+        result = await conn.execute(__import__("sqlalchemy").text("PRAGMA table_info(users)"))
+        if "phone" not in {row[1] for row in result.fetchall()}:
+            await conn.execute(
+                __import__("sqlalchemy").text("ALTER TABLE users ADD COLUMN phone VARCHAR(20) NOT NULL DEFAULT ''")
+            )
+
     # Patch: add subject_id / class_id to questions if they were created before
     # these columns existed in the model (create_all does not ALTER existing tables).
     dialect = conn.dialect.name
