@@ -133,7 +133,7 @@ async def test_generate_ai_rubric_three_roots():
         }, headers=headers)
         assert gen_res.status_code == 200
         rubrics = gen_res.json()["rubrics"]
-        assert len(rubrics) == 3
+        assert len(rubrics) == 6
 
         # Check 3 Gốc representations
         criterion_names = [r["criterion_name"] for r in rubrics]
@@ -141,8 +141,13 @@ async def test_generate_ai_rubric_three_roots():
         assert any("Trí tuệ" in name for name in criterion_names)
         assert any("Nghị lực" in name for name in criterion_names)
 
-        # Check points sum matches requested total_points exactly
-        total_pts = sum(Decimal(str(r["max_points"])) for r in rubrics)
+        # Check 3 Độc representations
+        assert any("Tham" in name for name in criterion_names)
+        assert any("Sân" in name for name in criterion_names)
+        assert any("Si" in name for name in criterion_names)
+
+        # Check positive points sum matches requested total_points exactly
+        total_pts = sum(Decimal(str(r["max_points"])) for r in rubrics if not r.get("is_deduction"))
         assert total_pts == Decimal("10.00")
 
         # 4. Create question directly using the AI-generated rubrics
@@ -154,7 +159,7 @@ async def test_generate_ai_rubric_three_roots():
         }, headers=headers)
         assert create_res.status_code == 200
         created_q = create_res.json()
-        assert len(created_q["rubrics"]) == 3
+        assert len(created_q["rubrics"]) == 6
 
 
 @pytest.mark.asyncio
@@ -355,6 +360,58 @@ async def test_excel_template_and_bulk_import():
         assert len(essay_custom["rubrics"]) == 2
         rubric_custom_sum = sum(Decimal(str(r["max_points"])) for r in essay_custom["rubrics"])
         assert rubric_custom_sum == Decimal("8.00")
+
+
+@pytest.mark.asyncio
+async def test_import_chanh_kien_excel_40_questions():
+    import os
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        reg_res = await ac.post("/api/v1/auth/register", json={
+            "email": "teacher_ck40@example.com",
+            "password": "Password123!",
+            "full_name": "Thay Giao Chanh Kien",
+            "role": "teacher"
+        })
+        token = reg_res.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        excel_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../../40_cau_hoi_chanh_kien_1.xlsx"))
+        assert os.path.exists(excel_path), f"File {excel_path} must exist"
+
+        with open(excel_path, "rb") as f:
+            file_bytes = f.read()
+
+        files = {
+            "file": ("40_cau_hoi_chanh_kien_1.xlsx", file_bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        }
+
+        import_res = await ac.post("/api/v1/questions/import-excel", files=files, headers=headers)
+        assert import_res.status_code == 200
+        res_json = import_res.json()
+        assert res_json["total"] == 40
+        assert res_json["success_count"] == 40
+        assert res_json["failed_count"] == 0
+
+        # Verify Question 39: Essay question analyzing 3 Độc
+        q39 = next((q for q in res_json["imported_questions"] if "nhận diện 3 Độc (Tham - Sân - Si)" in q["content"]), None)
+        assert q39 is not None
+        assert q39["type"] == "essay"
+
+        # Verify criteria: Analyzing 3 Độc is AWARDED points (+)
+        rubrics = q39["rubrics"]
+        poison_pos_criterion = next((r for r in rubrics if "Nhận diện & Phân tích 3 Độc" in r["criterion_name"]), None)
+        assert poison_pos_criterion is not None
+        assert poison_pos_criterion["is_deduction"] is False
+
+        # Verify deduction criterion is DEDUCTED points (-)
+        deduct_criterion = next((r for r in rubrics if "Trừ điểm" in r["criterion_name"]), None)
+        assert deduct_criterion is not None
+        assert deduct_criterion["is_deduction"] is True
+
+        # Verify positive criteria sum equals question default points exactly
+        pos_sum = sum(Decimal(str(r["max_points"])) for r in rubrics if not r["is_deduction"])
+        assert pos_sum == Decimal(str(q39["default_points"]))
 
 
 @pytest.mark.asyncio

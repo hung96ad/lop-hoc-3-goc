@@ -14,6 +14,7 @@ import {
   Sparkles,
   MessageSquare,
   ShieldCheck,
+  ShieldAlert,
   Target
 } from "lucide-react";
 import { apiFetch } from "../../../../lib/api";
@@ -29,6 +30,7 @@ interface StudentResultData {
   teacher_feedback: string | null;
   ai_feedback: {
     three_roots?: any;
+    three_poisons?: any;
     transformative_advice?: string;
     practical_action_plan?: string[];
   } | null;
@@ -283,7 +285,9 @@ export default function StudentResultPage() {
                   🌱 Gốc Đạo Đức
                 </span>
                 <p className="text-sm text-slate-700 leading-relaxed mt-2">
-                  {result.ai_feedback.three_roots.dao_duc?.reasoning || "Tư tưởng hướng thiện, vì cộng đồng và lòng trung thực."}
+                  {typeof result.ai_feedback.three_roots.dao_duc === "string"
+                    ? result.ai_feedback.three_roots.dao_duc
+                    : (result.ai_feedback.three_roots.dao_duc?.reasoning || result.ai_feedback.three_roots.dao_duc?.evidence || "Tư tưởng hướng thiện, vì cộng đồng và lòng trung thực.")}
                 </p>
               </div>
 
@@ -293,7 +297,9 @@ export default function StudentResultPage() {
                   💡 Gốc Trí Tuệ
                 </span>
                 <p className="text-sm text-slate-700 leading-relaxed mt-2">
-                  {result.ai_feedback.three_roots.tri_tue?.reasoning || "Khả năng phân tích sâu sắc, hiểu rõ bản chất vấn đề."}
+                  {typeof result.ai_feedback.three_roots.tri_tue === "string"
+                    ? result.ai_feedback.three_roots.tri_tue
+                    : (result.ai_feedback.three_roots.tri_tue?.reasoning || result.ai_feedback.three_roots.tri_tue?.evidence || "Khả năng phân tích sâu sắc, hiểu rõ bản chất vấn đề.")}
                 </p>
               </div>
 
@@ -303,8 +309,94 @@ export default function StudentResultPage() {
                   🛡️ Gốc Nghị Lực
                 </span>
                 <p className="text-sm text-slate-700 leading-relaxed mt-2">
-                  {result.ai_feedback.three_roots.nghi_luc?.reasoning || "Ý chí kiên cường, dũng cảm vượt khó khăn và cám dỗ."}
+                  {typeof result.ai_feedback.three_roots.nghi_luc === "string"
+                    ? result.ai_feedback.three_roots.nghi_luc
+                    : (result.ai_feedback.three_roots.nghi_luc?.reasoning || result.ai_feedback.three_roots.nghi_luc?.evidence || "Ý chí kiên cường, dũng cảm vượt khó khăn và cám dỗ.")}
                 </p>
+              </div>
+            </div>
+          )}
+
+          {/* 3 Poisons (Tham - Sân - Si) & Points Deduction */}
+          {result.ai_feedback.three_poisons && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold text-rose-900 uppercase tracking-wider flex items-center gap-2">
+                  <ShieldAlert className="h-5 w-5 text-rose-600" />
+                  <span>Báo Cáo Nhận Diện & Trừ Điểm 3 Độc (Tham - Sân - Si)</span>
+                </span>
+                {result.ai_feedback.three_poisons.points_deducted !== undefined &&
+                Number(result.ai_feedback.three_poisons.points_deducted) > 0 ? (
+                  <span className="text-xs font-bold text-rose-700 bg-rose-100 px-3 py-1 rounded-full border border-rose-200">
+                    Tổng điểm trừ: -{Number(result.ai_feedback.three_poisons.points_deducted).toFixed(2)}đ (Điểm tối thiểu là 0)
+                  </span>
+                ) : (
+                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">
+                    Tâm thế trong sáng, không phát hiện vi phạm (-0.00đ)
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Tham */}
+                <div className="p-6 bg-white rounded-2xl border border-rose-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-rose-700 uppercase tracking-wider bg-rose-50 px-2.5 py-1 rounded-full inline-block">
+                      🐍 Tâm Tham (Vị kỷ)
+                    </span>
+                    {result.ai_feedback.three_poisons.tham_deduction &&
+                      Number(result.ai_feedback.three_poisons.tham_deduction) > 0 && (
+                        <span className="text-xs font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-md">
+                          -{Number(result.ai_feedback.three_poisons.tham_deduction).toFixed(2)}đ
+                        </span>
+                      )}
+                  </div>
+                  <p className="text-sm text-slate-700 leading-relaxed mt-2">
+                    {typeof result.ai_feedback.three_poisons.tham === "string"
+                      ? result.ai_feedback.three_poisons.tham
+                      : result.ai_feedback.three_poisons.tham?.reasoning || "Không có biểu hiện mưu cầu lợi ích cá nhân."}
+                  </p>
+                </div>
+
+                {/* San */}
+                <div className="p-6 bg-white rounded-2xl border border-rose-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-rose-700 uppercase tracking-wider bg-rose-50 px-2.5 py-1 rounded-full inline-block">
+                      ⚡ Tâm Sân (Giận dữ)
+                    </span>
+                    {result.ai_feedback.three_poisons.san_deduction &&
+                      Number(result.ai_feedback.three_poisons.san_deduction) > 0 && (
+                        <span className="text-xs font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-md">
+                          -{Number(result.ai_feedback.three_poisons.san_deduction).toFixed(2)}đ
+                        </span>
+                      )}
+                  </div>
+                  <p className="text-sm text-slate-700 leading-relaxed mt-2">
+                    {typeof result.ai_feedback.three_poisons.san === "string"
+                      ? result.ai_feedback.three_poisons.san
+                      : result.ai_feedback.three_poisons.san?.reasoning || "Văn phong điềm tĩnh, không công kích hay oán trách."}
+                  </p>
+                </div>
+
+                {/* Si */}
+                <div className="p-6 bg-white rounded-2xl border border-rose-200 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-rose-700 uppercase tracking-wider bg-rose-50 px-2.5 py-1 rounded-full inline-block">
+                      🌀 Tâm Si (Mê muội)
+                    </span>
+                    {result.ai_feedback.three_poisons.si_deduction &&
+                      Number(result.ai_feedback.three_poisons.si_deduction) > 0 && (
+                        <span className="text-xs font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-md">
+                          -{Number(result.ai_feedback.three_poisons.si_deduction).toFixed(2)}đ
+                        </span>
+                      )}
+                  </div>
+                  <p className="text-sm text-slate-700 leading-relaxed mt-2">
+                    {typeof result.ai_feedback.three_poisons.si === "string"
+                      ? result.ai_feedback.three_poisons.si
+                      : result.ai_feedback.three_poisons.si?.reasoning || "Nhìn nhận vấn đề khách quan, dựa trên căn cứ thực tế."}
+                  </p>
+                </div>
               </div>
             </div>
           )}

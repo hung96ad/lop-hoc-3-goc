@@ -18,6 +18,7 @@ import {
   Sparkles,
   BookOpen,
   ShieldCheck,
+  ShieldAlert,
   Scale
 } from "lucide-react";
 import { apiFetch } from "../../../../lib/api";
@@ -351,30 +352,162 @@ export default function AttemptReviewPage() {
 
                     {/* 3 Roots cards */}
                     {ai.three_roots && (
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-                        <div className="p-3.5 rounded-xl bg-white border border-emerald-100 shadow-2xs">
-                          <p className="text-xs font-bold text-emerald-800 uppercase flex items-center gap-1">
-                            🌱 Đạo Đức (Moral)
-                          </p>
-                          <p className="text-xs text-slate-600 mt-1 leading-normal">
-                            {ai.three_roots.dao_duc?.reasoning || "Không phát hiện yếu tố tiêu cực."}
-                          </p>
+                      <div className="mb-4 space-y-1.5">
+                        <p className="text-xs font-bold text-emerald-800 uppercase flex items-center gap-1.5">
+                          🌱 Phân Tích 3 Gốc Rễ (Cộng Điểm)
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div className="p-3.5 rounded-xl bg-white border border-emerald-100 shadow-2xs">
+                            <p className="text-xs font-bold text-emerald-800 uppercase flex items-center gap-1">
+                              🌱 Đạo Đức (Moral)
+                            </p>
+                            <p className="text-xs text-slate-600 mt-1 leading-normal">
+                              {typeof ai.three_roots.dao_duc === "string"
+                                ? ai.three_roots.dao_duc
+                                : ai.three_roots.dao_duc?.reasoning || "Không phát hiện yếu tố tiêu cực."}
+                            </p>
+                          </div>
+                          <div className="p-3.5 rounded-xl bg-white border border-blue-100 shadow-2xs">
+                            <p className="text-xs font-bold text-blue-800 uppercase flex items-center gap-1">
+                              💡 Trí Tuệ (Wisdom)
+                            </p>
+                            <p className="text-xs text-slate-600 mt-1 leading-normal">
+                              {typeof ai.three_roots.tri_tue === "string"
+                                ? ai.three_roots.tri_tue
+                                : ai.three_roots.tri_tue?.reasoning || "Thể hiện tư duy logic và hiểu bài."}
+                            </p>
+                          </div>
+                          <div className="p-3.5 rounded-xl bg-white border border-amber-100 shadow-2xs">
+                            <p className="text-xs font-bold text-amber-800 uppercase flex items-center gap-1">
+                              🛡️ Nghị Lực (Courage)
+                            </p>
+                            <p className="text-xs text-slate-600 mt-1 leading-normal">
+                              {typeof ai.three_roots.nghi_luc === "string"
+                                ? ai.three_roots.nghi_luc
+                                : ai.three_roots.nghi_luc?.reasoning || "Thể hiện tinh thần vượt khó, bền bỉ."}
+                            </p>
+                          </div>
                         </div>
-                        <div className="p-3.5 rounded-xl bg-white border border-blue-100 shadow-2xs">
-                          <p className="text-xs font-bold text-blue-800 uppercase flex items-center gap-1">
-                            💡 Trí Tuệ (Wisdom)
+                      </div>
+                    )}
+
+                    {/* 3 Poisons cards (Tham - Sân - Si) with deductions */}
+                    {ai.three_poisons && (
+                      <div className="mb-4 space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-bold text-rose-800 uppercase flex items-center gap-1.5">
+                            <ShieldAlert className="h-4 w-4 text-rose-600" />
+                            <span>Phân Tích 3 Độc & Trừ Điểm (Tham - Sân - Si)</span>
                           </p>
-                          <p className="text-xs text-slate-600 mt-1 leading-normal">
-                            {ai.three_roots.tri_tue?.reasoning || "Thể hiện tư duy logic và hiểu bài."}
-                          </p>
+                          {ai.three_poisons.points_deducted !== undefined && Number(ai.three_poisons.points_deducted) > 0 ? (
+                            <span className="text-xs font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200">
+                              Tổng điểm trừ: -{Number(ai.three_poisons.points_deducted).toFixed(2)}đ (Min điểm: 0.00đ)
+                            </span>
+                          ) : (
+                            <span className="text-xs font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                              Không phát hiện vi phạm 3 Độc (-0.00đ)
+                            </span>
+                          )}
                         </div>
-                        <div className="p-3.5 rounded-xl bg-white border border-amber-100 shadow-2xs">
-                          <p className="text-xs font-bold text-amber-800 uppercase flex items-center gap-1">
-                            🛡️ Nghị Lực (Courage)
-                          </p>
-                          <p className="text-xs text-slate-600 mt-1 leading-normal">
-                            {ai.three_roots.nghi_luc?.reasoning || "Thể hiện tinh thần vượt khó, bền bỉ."}
-                          </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          {/* Tham */}
+                          <div className="p-3.5 rounded-xl bg-white border border-rose-100 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-bold text-rose-800 uppercase">🐍 Tham (Greed)</p>
+                              {ai.three_poisons.tham_deduction && Number(ai.three_poisons.tham_deduction) > 0 && (
+                                <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">
+                                  -{Number(ai.three_poisons.tham_deduction).toFixed(2)}đ
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 mt-1 leading-normal">
+                              {typeof ai.three_poisons.tham === "string"
+                                ? ai.three_poisons.tham
+                                : ai.three_poisons.tham?.reasoning || "Không có biểu hiện mưu cầu vị kỷ."}
+                            </p>
+                          </div>
+
+                          {/* San */}
+                          <div className="p-3.5 rounded-xl bg-white border border-rose-100 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-bold text-rose-800 uppercase">⚡ Sân (Anger)</p>
+                              {ai.three_poisons.san_deduction && Number(ai.three_poisons.san_deduction) > 0 && (
+                                <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">
+                                  -{Number(ai.three_poisons.san_deduction).toFixed(2)}đ
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 mt-1 leading-normal">
+                              {typeof ai.three_poisons.san === "string"
+                                ? ai.three_poisons.san
+                                : ai.three_poisons.san?.reasoning || "Văn phong điềm tĩnh, không công kích."}
+                            </p>
+                          </div>
+
+                          {/* Si */}
+                          <div className="p-3.5 rounded-xl bg-white border border-rose-100 shadow-2xs">
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs font-bold text-rose-800 uppercase">🌀 Si (Delusion)</p>
+                              {ai.three_poisons.si_deduction && Number(ai.three_poisons.si_deduction) > 0 && (
+                                <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded">
+                                  -{Number(ai.three_poisons.si_deduction).toFixed(2)}đ
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 mt-1 leading-normal">
+                              {typeof ai.three_poisons.si === "string"
+                                ? ai.three_poisons.si
+                                : ai.three_poisons.si?.reasoning || "Tư duy sáng suốt, có căn cứ logic."}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Rubric Criteria Evaluation Breakdown */}
+                    {ai.rubric_evaluations && ai.rubric_evaluations.length > 0 && (
+                      <div className="mb-4 p-3.5 rounded-xl bg-white border border-slate-200">
+                        <p className="text-xs font-bold text-slate-800 uppercase mb-2 flex items-center gap-1.5">
+                          <BookOpen className="h-4 w-4 text-indigo-600" />
+                          <span>Chi Tiết Đánh Giá Theo Khung Rubric (3 Gốc & 3 Độc)</span>
+                        </p>
+                        <div className="space-y-2">
+                          {ai.rubric_evaluations.map((rev: any, rIdx: number) => {
+                            const isDeduct = rev.is_deduction || rev.criterion_name.toLowerCase().includes("trừ");
+                            const deductedVal = Number(rev.points_deducted || (isDeduct ? rev.awarded_points : 0));
+
+                            return (
+                              <div
+                                key={rIdx}
+                                className={`p-2.5 rounded-lg border text-xs ${
+                                  isDeduct
+                                    ? "bg-rose-50/40 border-rose-200 text-rose-950"
+                                    : "bg-slate-50 border-slate-200 text-slate-800"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between font-bold">
+                                  <span>{rev.criterion_name}</span>
+                                  <span
+                                    className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                      isDeduct
+                                        ? deductedVal > 0
+                                          ? "bg-rose-200 text-rose-900"
+                                          : "bg-slate-100 text-slate-600"
+                                        : "bg-emerald-100 text-emerald-800"
+                                    }`}
+                                  >
+                                    {isDeduct
+                                      ? deductedVal > 0
+                                        ? `- Trừ ${deductedVal.toFixed(2)} / Tối đa ${rev.max_points}đ`
+                                        : `Không trừ điểm (0.00 / ${rev.max_points}đ)`
+                                      : `+ ${Number(rev.awarded_points).toFixed(2)} / ${rev.max_points}đ`}
+                                  </span>
+                                </div>
+                                <p className="text-slate-600 mt-1 leading-normal">{rev.reasoning}</p>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}

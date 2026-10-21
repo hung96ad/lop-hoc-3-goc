@@ -16,10 +16,18 @@ import {
   BookOpen
 } from "lucide-react";
 import { apiFetch } from "../../../../lib/api";
+import { validateEssayAnswer } from "../../../../lib/essayValidator";
 
 interface QuestionOption {
   id: string;
   content: string;
+}
+
+interface RubricInfo {
+  criterion_name: string;
+  description?: string;
+  max_points: number;
+  is_deduction?: boolean;
 }
 
 interface QuestionData {
@@ -29,6 +37,7 @@ interface QuestionData {
   type: "single_choice" | "multiple_select" | "essay";
   content: string;
   options?: QuestionOption[];
+  rubrics?: RubricInfo[];
 }
 
 interface AnswerRead {
@@ -135,8 +144,15 @@ export default function ExamTakingPage() {
 
         if (!mounted) return;
 
+        // Shuffle questions deterministically per attempt
+        const rawQuestions = data.questions || [];
+        const questionsOrdered = shuffleOptions(
+          rawQuestions,
+          `${data.attempt_id || assignmentId}_questions_order`
+        );
+
         // Shuffle options for multiple-choice questions (deterministic per student attempt and question)
-        const shuffledQuestions = (data.questions || []).map((q) => {
+        const shuffledQuestions = questionsOrdered.map((q) => {
           if (q.options && q.options.length > 1 && q.type !== "essay") {
             const seed = `${data.attempt_id || assignmentId}_${q.exam_question_id}`;
             return {
@@ -290,6 +306,25 @@ export default function ExamTakingPage() {
   const handleSubmitExam = async () => {
     if (!attempt || isSubmitting) return;
 
+    // Validate all essay questions before submitting
+    for (let i = 0; i < attempt.questions.length; i++) {
+      const q = attempt.questions[i];
+      if (q.type === "essay") {
+        const text = answers[q.exam_question_id]?.text_response || "";
+        const val = validateEssayAnswer(text);
+        if (!val.isValid) {
+          alert(
+            `⚠️ Không thể nộp bài!\n\nCâu số ${i + 1} (Tự luận) có câu trả lời chưa hợp lệ:\n"${val.reason}".\n\nVui lòng nhập lại câu trả lời nghiêm túc trước khi nộp bài.`
+          );
+          const elem = document.getElementById(`q-${q.exam_question_id}`);
+          elem?.scrollIntoView({ behavior: "smooth", block: "center" });
+          const textarea = elem?.querySelector("textarea");
+          textarea?.focus();
+          return;
+        }
+      }
+    }
+
     if (!confirm("Bạn có chắc chắn muốn nộp bài thi ngay bây giờ? Sau khi nộp bạn sẽ không thể sửa đổi câu trả lời.")) {
       return;
     }
@@ -439,6 +474,7 @@ export default function ExamTakingPage() {
           return (
             <div
               key={q.exam_question_id}
+              id={`q-${q.exam_question_id}`}
               className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4"
             >
               {/* Question Header */}
@@ -519,22 +555,91 @@ export default function ExamTakingPage() {
                 </div>
               )}
 
-              {/* Essay textarea */}
+              {/* Essay Rubrics & 3 Gốc / 3 Độc Guidance */}
               {q.type === "essay" && (
-                <div className="space-y-2 pt-2">
-                  <textarea
-                    rows={6}
-                    value={ans.text_response}
-                    onChange={(e) => handleEssayChange(q.exam_question_id, e.target.value)}
-                    placeholder="Nhập nội dung bài làm tự luận của bạn tại đây..."
-                    className="w-full p-4 border border-slate-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
-                  />
-                  <div className="flex items-center justify-between text-2xs text-slate-400">
-                    <span>* Hệ thống tự động lưu sau mỗi lần gõ</span>
-                    <span>{ans.text_response.length} ký tự</span>
+                <div className="p-3.5 bg-gradient-to-r from-blue-50/80 to-indigo-50/60 rounded-xl border border-indigo-100 text-xs space-y-2">
+                  <div className="flex items-center justify-between text-indigo-950 font-bold">
+                    <span className="flex items-center gap-1.5">
+                      <BookOpen className="h-4 w-4 text-indigo-600" />
+                      <span>Hướng dẫn chấm điểm tự luận theo 3 Gốc & 3 Độc:</span>
+                    </span>
+                    <span className="text-[11px] font-semibold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
+                      Min điểm: 0.00đ
+                    </span>
                   </div>
+                  <p className="text-slate-600 leading-relaxed text-[11px]">
+                    Bài làm được cộng điểm theo các tiêu chí <strong>3 Gốc rễ</strong> (Đạo đức, Trí tuệ, Nghị lực). Nếu phát hiện biểu hiện của <strong>3 Độc</strong> (Tham lam vụ lợi, Sân hận công kích, Si mê định kiến phiến diện), học sinh sẽ <strong>bị trừ điểm tương ứng</strong>. Điểm tối thiểu cho câu tự luận là 0 điểm.
+                  </p>
+
+                  {q.rubrics && q.rubrics.length > 0 && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1 border-t border-indigo-100/80">
+                      {q.rubrics.map((r, rIdx) => {
+                        const isDeduct = r.is_deduction || r.criterion_name.toLowerCase().includes("trừ");
+                        return (
+                          <div
+                            key={rIdx}
+                            className={`p-2 rounded-lg border text-[11px] ${
+                              isDeduct
+                                ? "bg-rose-50/70 border-rose-200 text-rose-950"
+                                : "bg-white border-emerald-200 text-emerald-950"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between font-bold">
+                              <span>{r.criterion_name}</span>
+                              <span
+                                className={`px-1.5 py-0.2 rounded text-[10px] ${
+                                  isDeduct ? "bg-rose-100 text-rose-800" : "bg-emerald-100 text-emerald-800"
+                                }`}
+                              >
+                                {isDeduct ? `- Tối đa ${r.max_points}đ` : `+${r.max_points}đ`}
+                              </span>
+                            </div>
+                            {r.description && (
+                              <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{r.description}</p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Essay textarea */}
+              {q.type === "essay" && (() => {
+                const essayValidation = ans.text_response.trim()
+                  ? validateEssayAnswer(ans.text_response)
+                  : null;
+                const isInvalid = essayValidation && !essayValidation.isValid;
+
+                return (
+                  <div className="space-y-2 pt-2">
+                    <textarea
+                      rows={6}
+                      value={ans.text_response}
+                      onChange={(e) => handleEssayChange(q.exam_question_id, e.target.value)}
+                      placeholder="Nhập nội dung bài làm tự luận của bạn tại đây (tối thiểu 15 ký tự, diễn đạt nghiêm túc và có ý nghĩa)..."
+                      className={`w-full p-4 border rounded-xl text-sm focus:outline-none focus:ring-2 leading-relaxed transition ${
+                        isInvalid
+                          ? "border-amber-400 focus:ring-amber-500 bg-amber-50/20"
+                          : "border-slate-300 focus:ring-indigo-500"
+                      }`}
+                    />
+                    {isInvalid && (
+                      <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs">
+                        <AlertCircle className="h-4 w-4 shrink-0 text-amber-600" />
+                        <span>
+                          <strong>Cảnh báo:</strong> {essayValidation.reason}. Vui lòng nhập lại câu trả lời nghiêm túc để được chấm điểm.
+                        </span>
+                      </div>
+                    )}
+                    <div className="flex items-center justify-between text-2xs text-slate-400">
+                      <span>* Hệ thống tự động lưu sau mỗi lần gõ</span>
+                      <span>{ans.text_response.length} ký tự</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

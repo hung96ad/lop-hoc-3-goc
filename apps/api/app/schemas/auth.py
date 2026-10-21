@@ -22,6 +22,7 @@ class TokenResponse(BaseModel):
     email: str
     full_name: str
     role: str
+    phone: Optional[str] = ""
 
 
 class RefreshTokenRequest(BaseModel):

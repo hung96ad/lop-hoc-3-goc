@@ -124,6 +124,7 @@ class QuestionRubric(Base):
     criterion_name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=True)
     max_points: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
+    is_deduction: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     level_descriptors: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 

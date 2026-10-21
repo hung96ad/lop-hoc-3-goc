@@ -47,7 +47,7 @@ async def get_current_teacher(
 async def get_current_student(
     current_user: User = Depends(get_current_user)
 ) -> User:
-    if current_user.role not in [UserRole.STUDENT.value, UserRole.ADMIN.value]:
+    if current_user.role not in [UserRole.STUDENT.value, UserRole.ADMIN.value, UserRole.TEACHER.value]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Operation requires student permissions"

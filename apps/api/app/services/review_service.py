@@ -173,12 +173,17 @@ class ReviewService:
                 detail=f"Dữ liệu đã được cập nhật bởi phiên khác (Current version: {gr.version}, Expected: {data.expected_version})"
             )
 
-        # Check score upper limit
+        # Check score upper limit and lower limit
         eq_max_points = gr.answer.exam_question.points
         if data.score > eq_max_points:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Điểm số ({data.score}) không được vượt quá điểm tối đa ({eq_max_points})"
+            )
+        if data.score < Decimal("0.00"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Điểm số câu tự luận tối thiểu là 0.00 điểm"
             )
 
         prev_score = gr.teacher_final_score
@@ -214,10 +219,10 @@ class ReviewService:
         total_essay = Decimal("0.00")
         for a in attempt.answers:
             if a.exam_question.frozen_question_data.get("type") == "essay" and a.grading_result:
-                total_essay += a.grading_result.teacher_final_score
+                total_essay += max(Decimal("0.00"), a.grading_result.teacher_final_score)
 
-        attempt.essay_score = total_essay
-        attempt.final_score = attempt.objective_score + total_essay
+        attempt.essay_score = max(Decimal("0.00"), total_essay)
+        attempt.final_score = max(Decimal("0.00"), attempt.objective_score + total_essay)
 
         await db.commit()
         await db.refresh(gr)

@@ -57,6 +57,12 @@ async def _run_schema_migrations(conn):
                 "CREATE INDEX IF NOT EXISTS ix_questions_class_id ON questions(class_id)"
             )
         )
+        await conn.execute(
+            __import__("sqlalchemy").text(
+                "ALTER TABLE question_rubrics "
+                "ADD COLUMN IF NOT EXISTS is_deduction BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
     elif dialect == "sqlite":
         # SQLite does not support ADD COLUMN IF NOT EXISTS; check first
         result = await conn.execute(
@@ -75,6 +81,16 @@ async def _run_schema_migrations(conn):
                 __import__("sqlalchemy").text(
                     "ALTER TABLE questions ADD COLUMN class_id VARCHAR(36) "
                     "REFERENCES classes(id) ON DELETE SET NULL"
+                )
+            )
+        res_rubrics = await conn.execute(
+            __import__("sqlalchemy").text("PRAGMA table_info(question_rubrics)")
+        )
+        existing_rubrics = {row[1] for row in res_rubrics.fetchall()}
+        if "is_deduction" not in existing_rubrics:
+            await conn.execute(
+                __import__("sqlalchemy").text(
+                    "ALTER TABLE question_rubrics ADD COLUMN is_deduction BOOLEAN NOT NULL DEFAULT 0"
                 )
             )
 

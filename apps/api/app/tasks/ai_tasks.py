@@ -70,10 +70,11 @@ async def evaluate_essay_answer_task(answer_id: str):
             # 4. Update GradingResult with AI suggestion (AI DOES NOT overwrite official score)
             gr: GradingResult = answer.grading_result
             if gr:
-                gr.ai_suggested_score = ai_output.total_suggested_score
+                clean_score = max(Decimal("0.00"), ai_output.total_suggested_score)
+                gr.ai_suggested_score = clean_score
                 # Default teacher score initialized to AI proposal for teacher convenience
-                gr.teacher_final_score = ai_output.total_suggested_score
-                gr.score = ai_output.total_suggested_score
+                gr.teacher_final_score = clean_score
+                gr.score = clean_score
             
             # 5. Check if all essay answers in this attempt have been analyzed
             attempt_query = select(Attempt).where(Attempt.id == answer.attempt_id).options(
@@ -83,20 +84,20 @@ async def evaluate_essay_answer_task(answer_id: str):
             att_res = await db.execute(attempt_query)
             attempt = att_res.scalar_one()
 
-            # Sum total essay score suggested
+            # Sum total essay score suggested (minimum score for each essay is 0)
             total_essay = Decimal("0.00")
             all_essays_analyzed = True
 
             for ans in attempt.answers:
                 if ans.exam_question.frozen_question_data.get("type") == "essay":
                     if ans.grading_result and ans.grading_result.ai_suggested_score is not None:
-                        total_essay += ans.grading_result.ai_suggested_score
+                        total_essay += max(Decimal("0.00"), ans.grading_result.ai_suggested_score)
                     else:
                         all_essays_analyzed = False
 
             if all_essays_analyzed:
-                attempt.essay_score = total_essay
-                attempt.final_score = attempt.objective_score + total_essay
+                attempt.essay_score = max(Decimal("0.00"), total_essay)
+                attempt.final_score = max(Decimal("0.00"), attempt.objective_score + attempt.essay_score)
                 attempt.status = AttemptStatus.PENDING_REVIEW.value
 
             await db.commit()

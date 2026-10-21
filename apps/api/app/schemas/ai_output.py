@@ -7,6 +7,8 @@ class CriterionEvaluation(BaseModel):
     criterion_name: str
     max_points: Decimal = Field(..., ge=0)
     awarded_points: Decimal = Field(..., ge=0)
+    is_deduction: bool = Field(default=False, description="True nếu là tiêu chí trừ điểm (3 Độc)")
+    points_deducted: Decimal = Field(default=Decimal("0.00"), ge=0, description="Số điểm bị trừ nếu vi phạm tiêu chí")
     direct_quotes: List[str] = Field(default_factory=list, description="Dẫn chứng trích dẫn nguyên văn từ bài viết")
     reasoning: str = Field(..., description="Lập luận chấm điểm dựa trên mức rubric")
 
@@ -21,6 +23,10 @@ class ThreePoisonsManifestation(BaseModel):
     tham: str = Field(..., description="Dấu hiệu tư tưởng chiếm hữu, ích kỷ, mong cầu quá mức nếu có biểu hiện trong ngữ cảnh")
     san: str = Field(..., description="Dấu hiệu cảm xúc tức giận, chống đối, bất mãn gay gắt nếu có biểu hiện")
     si: str = Field(..., description="Dấu hiệu ngộ nhận, thiếu thông tin xác thực, nhìn nhận phiến diện nếu có biểu hiện")
+    points_deducted: Decimal = Field(default=Decimal("0.00"), ge=0, description="Tổng số điểm bị trừ do phát hiện 3 độc")
+    tham_deduction: Decimal = Field(default=Decimal("0.00"), ge=0, description="Điểm trừ do biểu hiện Tham")
+    san_deduction: Decimal = Field(default=Decimal("0.00"), ge=0, description="Điểm trừ do biểu hiện Sân")
+    si_deduction: Decimal = Field(default=Decimal("0.00"), ge=0, description="Điểm trừ do biểu hiện Si")
 
 
 class PedagogicalFeedback(BaseModel):

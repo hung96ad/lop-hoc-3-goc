@@ -141,11 +141,17 @@ class QuestionService:
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Essay question must have at least 1 rubric criterion"
                 )
-            rubric_sum = sum(r.max_points for r in data.rubrics)
+            positive_rubrics = [r for r in data.rubrics if not getattr(r, "is_deduction", False)]
+            if not positive_rubrics:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Phải có ít nhất 1 tiêu chí cộng điểm (3 Gốc) cho câu tự luận"
+                )
+            rubric_sum = sum(r.max_points for r in positive_rubrics)
             if rubric_sum != data.default_points:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Sum of rubric max points ({rubric_sum}) must equal question default points ({data.default_points})"
+                    detail=f"Tổng điểm các tiêu chí cộng điểm ({rubric_sum}) phải bằng điểm mặc định của câu hỏi ({data.default_points})"
                 )
 
         question = Question(
@@ -180,6 +186,7 @@ class QuestionService:
                     criterion_name=rub.criterion_name,
                     description=rub.description or "",
                     max_points=rub.max_points,
+                    is_deduction=getattr(rub, "is_deduction", False),
                     level_descriptors=rub.level_descriptors,
                     version=1
                 )
@@ -220,6 +227,7 @@ class QuestionService:
                 criterion_name=rub.criterion_name,
                 description=rub.description,
                 max_points=rub.max_points,
+                is_deduction=getattr(rub, "is_deduction", False),
                 level_descriptors=rub.level_descriptors,
                 version=1
             ))
@@ -241,6 +249,7 @@ class QuestionService:
                 criterion_name=r["criterion_name"],
                 description=r.get("description", ""),
                 max_points=Decimal(str(r["max_points"])),
+                is_deduction=r.get("is_deduction", False),
                 level_descriptors=r.get("level_descriptors", {})
             )
             for r in rubrics_dict
@@ -329,15 +338,15 @@ class QuestionService:
             [
                 3,
                 "essay",
-                "Em hãy phân tích câu nói 'Có tài mà không có đức là người vô dụng, có đức mà không có tài thì làm việc gì cũng khó'. Vận dụng vào việc rèn luyện của bản thân.",
+                "Trình bày cách nhận diện 3 Độc (Tham - Sân - Si) trong một tình huống xung đột thực tế và đề xuất giải pháp chuyển hóa sang 3 Gốc rễ.",
                 10.00,
                 "",
                 "",
                 "",
                 "",
                 "",
-                "Bài làm cần làm rõ mối quan hệ giữa Đạo đức và Trí tuệ/Nghị lực.",
-                "Đạo đức (Tâm vị tha & Trách nhiệm): 3.50: Hiểu sâu sắc giá trị của Đức và sự phụng sự | Trí tuệ (Tư duy Nhân Quả & Giải pháp): 3.50: Phân tích biện chứng, dẫn chứng thuyết phục | Nghị lực (Dũng - Nhẫn - Tĩnh): 3.00: Kế hoạch hành động cụ thể và kiên định",
+                "Bài làm cần nhận diện chính xác 3 Độc và vận dụng 3 Gốc để chuyển hóa giải quyết vấn đề.",
+                "(+) Nhận diện & Phân tích 3 Độc: 3.50: Nhận diện chính xác và phân tích rõ nguồn gốc của tâm Tham, Sân hoặc Si giật dây trong tình huống | (+) Trí tuệ & Giải pháp Chuyển hóa: 3.50: Phân tích nhân quả và đề xuất giải pháp đúng đắn, thấu đáo | (+) Đạo đức & Nghị lực trong hành xử: 3.00: Thể hiện tâm vị tha, dũng cảm nhận lỗi, nhẫn nại lắng nghe và giữ tâm tĩnh | (-) Trừ điểm nếu bộc lộ 3 Độc (Vị kỷ/Công kích): 2.00: Trừ điểm nếu người viết bộc lộ tư tưởng vụ lợi, giận dữ công kích hoặc ngụy biện",
                 "CK1",
                 ""
             ]
@@ -391,7 +400,7 @@ class QuestionService:
             ("Đáp án A, B, C, D", "Tuỳ loại", "Văn bản các lựa chọn", "Bắt buộc tối thiểu 2 đáp án đối với câu hỏi trắc nghiệm"),
             ("Đáp án đúng", "Tuỳ loại", "A, B, C, D (hoặc A, B hoặc A,C,D)", "Đối với single_choice: chỉ 1 đáp án (VD: A)\nĐối với multiple_select: các đáp án cách nhau dấu phẩy (VD: A, B, D)"),
             ("Giải thích", "Không", "Văn bản giải thích đáp án", "Hiển thị cho học sinh sau khi hoàn thành bài thi"),
-            ("Rubric tự luận", "Không", "Tên tiêu chí: Điểm: Mô tả | Tên tiêu chí: Điểm: Mô tả", "Dành cho câu tự luận. Nếu để trống, hệ thống sẽ tự động tạo bộ Rubric 3 Gốc chuẩn (Đạo đức 35%, Trí tuệ 35%, Nghị lực 30%) khớp với điểm câu hỏi."),
+            ("Rubric tự luận", "Không", "[+/-] Tên tiêu chí: Điểm: Mô tả | [+/-] Tên tiêu chí: Điểm: Mô tả", "Dành cho câu tự luận. Tùy chọn CỘNG (+) hoặc TRỪ (-) điểm cho từng tiêu chí:\n• Mặc định: 3 Gốc cộng điểm (+), 3 Độc trừ điểm (-).\n• Với câu hỏi yêu cầu PHÂN TÍCH 3 ĐỘC: Tiêu chí phân tích 3 Độc sẽ được CỘNG ĐIỂM (ghi ký hiệu (+) hoặc có chữ 'Phân tích/Nhận diện', VD: '(+) Nhận diện 3 Độc: 3.50: Mô tả...').\n• Tiêu chí trừ điểm: Ghi (-) hoặc chữ 'Trừ điểm' (VD: '(-) Trừ điểm: Tham: 2.00: Mô tả...').\n• Tổng điểm các tiêu chí (+) bằng đúng điểm câu hỏi. Min điểm câu tự luận luôn là 0.00."),
             ("Mã môn học", "Không", "Mã code của môn học (VD: CK1)", "Nếu để trống, câu hỏi sẽ được gán cho môn học bạn chọn trên giao diện hoặc ngân hàng chung."),
             ("Mã lớp", "Không", "Mã code của lớp học (VD: LOP10A1)", "Tuỳ chọn nếu muốn gán cụ thể cho lớp học.")
         ]
@@ -699,13 +708,45 @@ class QuestionService:
                     for r_tok in rubric_tokens:
                         parts = [p.strip() for p in r_tok.split(":") if p.strip()]
                         if len(parts) >= 2:
-                            c_name = parts[0]
+                            raw_c_name = parts[0]
                             try:
                                 pts = Decimal(str(parts[1])).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                             except Exception:
                                 pts = Decimal("1.00")
                             desc = parts[2] if len(parts) > 2 else ""
-                            parsed_rubrics.append((c_name, pts, desc))
+
+                            # Xác định tiêu chí CỘNG (+) hay TRỪ (-)
+                            c_clean = raw_c_name
+                            c_lower = raw_c_name.lower()
+
+                            # 1. Ký hiệu rõ ràng (+/-)
+                            if c_clean.startswith("(+)") or c_clean.startswith("[+]") or c_clean.startswith("+"):
+                                is_deduct = False
+                                c_clean = re.sub(r'^[(\[]?\+[)\]]?\s*', '', c_clean).strip()
+                            elif c_clean.startswith("(-)") or c_clean.startswith("[-]") or c_clean.startswith("-"):
+                                is_deduct = True
+                                c_clean = re.sub(r'^[(\[]?\-[)\]]?\s*', '', c_clean).strip()
+                            elif "(+)" in c_clean or "[+]" in c_clean or "(cộng)" in c_lower or "[cộng]" in c_lower:
+                                is_deduct = False
+                                c_clean = re.sub(r'\s*[(\[]?(\+|cộng)[)\]]?', '', c_clean, flags=re.IGNORECASE).strip()
+                            elif "(-)" in c_clean or "[-]" in c_clean or "(trừ)" in c_lower or "[trừ]" in c_lower:
+                                is_deduct = True
+                                c_clean = re.sub(r'\s*[(\[]?(\-|trừ)[)\]]?', '', c_clean, flags=re.IGNORECASE).strip()
+                            else:
+                                # 2. Phân tích ngữ cảnh mặc định:
+                                # Nếu câu hỏi/tiêu chí là PHÂN TÍCH, NHẬN DIỆN, CHUYỂN HÓA 3 độc -> CỘNG ĐIỂM
+                                if any(k in c_lower for k in ["phân tích", "nhận diện", "chỉ ra", "chuyển hóa", "giải pháp", "đối chiếu", "hiểu biết"]):
+                                    is_deduct = False
+                                # Nếu tiêu chí ghi rõ trừ/phạt/vi phạm -> TRỪ ĐIỂM
+                                elif any(k in c_lower for k in ["trừ", "phạt", "vi phạm", "khuyết điểm"]):
+                                    is_deduct = True
+                                # Nếu chứa tham, sân, si mà không phải phân tích -> TRỪ ĐIỂM
+                                elif any(k in c_lower for k in ["tham", "sân", "san", "si", "3 độc"]):
+                                    is_deduct = True
+                                else:
+                                    is_deduct = False
+
+                            parsed_rubrics.append((c_clean, pts, desc, is_deduct))
 
                 # Nếu không có rubric hợp lệ -> Tự động sinh Rubric 3 Gốc chuẩn cân đối theo tổng điểm
                 if not parsed_rubrics:
@@ -714,28 +755,32 @@ class QuestionService:
                     pt2 = (default_points * Decimal("0.35")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                     pt3 = default_points - pt1 - pt2
                     parsed_rubrics = [
-                        ("Đạo đức (Tâm vị tha & Trách nhiệm)", pt1, "Thể hiện tư duy trung thực, tinh thần tương trợ và trách nhiệm"),
-                        ("Trí tuệ (Tư duy Nhân Quả & Giải pháp)", pt2, "Phân tích nguyên nhân gốc rễ, lập luận logic và đề xuất giải pháp đúng đắn"),
-                        ("Nghị lực (Dũng - Nhẫn - Tĩnh)", pt3, "Ý chí vượt khó, dũng cảm nhận lỗi và kiên trì rèn luyện bản thân")
+                        ("Đạo đức (Tâm vị tha & Trách nhiệm)", pt1, "Thể hiện tư duy trung thực, tinh thần tương trợ và trách nhiệm", False),
+                        ("Trí tuệ (Tư duy Nhân Quả & Giải pháp)", pt2, "Phân tích nguyên nhân gốc rễ, lập luận logic và đề xuất giải pháp đúng đắn", False),
+                        ("Nghị lực (Dũng - Nhẫn - Tĩnh)", pt3, "Ý chí vượt khó, dũng cảm nhận lỗi và kiên trì rèn luyện bản thân", False)
                     ]
                 else:
-                    # Đảm bảo tổng điểm rubric bằng default_points
-                    sum_pts = sum(p[1] for p in parsed_rubrics)
-                    if sum_pts != default_points:
-                        # Điều chỉnh tiêu chí cuối cùng để khớp điểm
-                        last_c, last_pts, last_desc = parsed_rubrics[-1]
-                        diff = default_points - sum_pts
-                        adjusted_pts = last_pts + diff
-                        if adjusted_pts > Decimal("0"):
-                            parsed_rubrics[-1] = (last_c, adjusted_pts, last_desc)
-                        else:
-                            default_points = sum_pts
+                    # Đảm bảo tổng điểm các tiêu chí cộng điểm bằng default_points
+                    positive_items = [p for p in parsed_rubrics if not p[3]]
+                    if positive_items:
+                        sum_pts = sum(p[1] for p in positive_items)
+                        if sum_pts != default_points:
+                            diff = default_points - sum_pts
+                            # Adjust last positive item
+                            for p_i in range(len(parsed_rubrics) - 1, -1, -1):
+                                if not parsed_rubrics[p_i][3]:
+                                    last_c, last_pts, last_desc, last_deduct = parsed_rubrics[p_i]
+                                    adjusted_pts = last_pts + diff
+                                    if adjusted_pts > Decimal("0"):
+                                        parsed_rubrics[p_i] = (last_c, adjusted_pts, last_desc, last_deduct)
+                                    break
 
-                for c_name, pts, desc in parsed_rubrics:
+                for c_name, pts, desc, is_deduct in parsed_rubrics:
                     question_rubrics.append(QuestionRubric(
                         criterion_name=c_name,
                         description=desc,
                         max_points=pts,
+                        is_deduction=is_deduct,
                         level_descriptors={"dat": float(pts * Decimal("0.6")), "xuat_sac": float(pts)},
                         version=1
                     ))

@@ -85,6 +85,7 @@ class ExamService:
                         "criterion_name": r.criterion_name,
                         "description": r.description,
                         "max_points": float(r.max_points),
+                        "is_deduction": getattr(r, "is_deduction", False),
                         "level_descriptors": r.level_descriptors,
                         "version": r.version
                     }

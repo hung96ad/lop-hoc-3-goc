@@ -33,6 +33,7 @@ interface RubricItem {
   criterion_name: string;
   description: string;
   max_points: string;
+  is_deduction?: boolean;
   level_descriptors?: Record<string, number>;
 }
 
@@ -106,19 +107,43 @@ export default function QuestionsPage() {
       criterion_name: "Đạo đức (Tâm vị tha & Trách nhiệm)",
       description: "Thể hiện tư duy trung thực, tinh thần tương trợ và trách nhiệm cộng đồng",
       max_points: "3.50",
+      is_deduction: false,
       level_descriptors: { dat: 2, xuat_sac: 3.5 },
     },
     {
       criterion_name: "Trí tuệ (Tư duy Nhân Quả & Giải pháp)",
       description: "Phân tích nguyên nhân gốc rễ, lập luận logic và đề xuất giải pháp đúng đắn",
       max_points: "3.50",
+      is_deduction: false,
       level_descriptors: { dat: 2, xuat_sac: 3.5 },
     },
     {
       criterion_name: "Nghị lực (Dũng - Nhẫn - Tĩnh)",
       description: "Ý chí vượt khó, dũng cảm nhận lỗi và kiên trì rèn luyện bản thân",
       max_points: "3.00",
+      is_deduction: false,
       level_descriptors: { dat: 1.5, xuat_sac: 3 },
+    },
+    {
+      criterion_name: "Trừ điểm: Tham (Vị kỷ & Trục lợi)",
+      description: "Trừ điểm nếu bài viết thể hiện tư tưởng mưu cầu lợi ích cá nhân ích kỷ hoặc tham lam",
+      max_points: "2.00",
+      is_deduction: true,
+      level_descriptors: { dat: 1, xuat_sac: 2 },
+    },
+    {
+      criterion_name: "Trừ điểm: Sân (Công kích & Giận dữ)",
+      description: "Trừ điểm nếu bài viết thể hiện cảm xúc giận dữ, oán trách, công kích tiêu cực",
+      max_points: "2.00",
+      is_deduction: true,
+      level_descriptors: { dat: 1, xuat_sac: 2 },
+    },
+    {
+      criterion_name: "Trừ điểm: Si (Định kiến & Mê muội)",
+      description: "Trừ điểm nếu bài viết thể hiện cái nhìn phiến diện, ngụy biện, mê tín, thiếu căn cứ",
+      max_points: "2.00",
+      is_deduction: true,
+      level_descriptors: { dat: 1, xuat_sac: 2 },
     },
   ]);
 
@@ -248,13 +273,14 @@ export default function QuestionsPage() {
     }
   };
 
-  const handleAddRubric = () => {
+  const handleAddRubric = (isDeduction = false) => {
     setRubrics([
       ...rubrics,
       {
-        criterion_name: "",
+        criterion_name: isDeduction ? "Trừ điểm: " : "",
         description: "",
         max_points: "2.00",
+        is_deduction: isDeduction,
         level_descriptors: { dat: 1, xuat_sac: 2 },
       },
     ]);
@@ -267,8 +293,8 @@ export default function QuestionsPage() {
 
   const handleRubricChange = (
     index: number,
-    field: "criterion_name" | "description" | "max_points",
-    value: string
+    field: "criterion_name" | "description" | "max_points" | "is_deduction",
+    value: any
   ) => {
     const updated = [...rubrics];
     updated[index] = {
@@ -299,30 +325,39 @@ export default function QuestionsPage() {
           criterion_name: r.criterion_name,
           description: r.description || "",
           max_points: String(r.max_points),
+          is_deduction: Boolean(r.is_deduction),
           level_descriptors: r.level_descriptors || {},
         }));
         setRubrics(formatted);
-        const total = formatted.reduce((acc, cur) => acc + (parseFloat(cur.max_points) || 0), 0);
-        setDefaultPoints(total.toFixed(2));
+        const posTotal = formatted
+          .filter((r) => !r.is_deduction)
+          .reduce((acc, cur) => acc + (parseFloat(cur.max_points) || 0), 0);
+        setDefaultPoints(posTotal.toFixed(2));
       }
     } catch (err: any) {
-      setError(err.message || "Tạo Rubric 3 Gốc bằng AI thất bại.");
+      setError(err.message || "Tạo Rubric 3 Gốc & 3 Độc bằng AI thất bại.");
     } finally {
       setGeneratingRubric(false);
     }
   };
 
+  const positiveRubricPoints = rubrics
+    .filter((r) => !r.is_deduction)
+    .reduce((acc, cur) => acc + (parseFloat(cur.max_points) || 0), 0);
+
+  const deductionRubricPoints = rubrics
+    .filter((r) => r.is_deduction)
+    .reduce((acc, cur) => acc + (parseFloat(cur.max_points) || 0), 0);
+
   const handleSyncPoints = () => {
-    const total = rubrics.reduce((acc, cur) => acc + (parseFloat(cur.max_points) || 0), 0);
-    setDefaultPoints(total.toFixed(2));
+    setDefaultPoints(positiveRubricPoints.toFixed(2));
   };
 
   const handleQTypeChange = (newType: "single_choice" | "multiple_select" | "essay") => {
     setQType(newType);
     if (newType === "essay") {
       if (defaultPoints === "2.00") {
-        const total = rubrics.reduce((acc, cur) => acc + (parseFloat(cur.max_points) || 0), 0);
-        setDefaultPoints(total > 0 ? total.toFixed(2) : "10.00");
+        setDefaultPoints(positiveRubricPoints > 0 ? positiveRubricPoints.toFixed(2) : "10.00");
       }
     } else {
       if (defaultPoints === "10.00") {
@@ -331,12 +366,8 @@ export default function QuestionsPage() {
     }
   };
 
-  const totalRubricPoints = rubrics.reduce(
-    (acc, cur) => acc + (parseFloat(cur.max_points) || 0),
-    0
-  );
   const currentDefaultPoints = parseFloat(defaultPoints) || 0;
-  const isPointsMatched = Math.abs(totalRubricPoints - currentDefaultPoints) < 0.01;
+  const isPointsMatched = Math.abs(positiveRubricPoints - currentDefaultPoints) < 0.01;
 
   const handleDuplicate = async (id: string) => {
     try {
@@ -374,6 +405,10 @@ export default function QuestionsPage() {
         if (rubrics.length === 0) {
           throw new Error("Câu hỏi tự luận phải có ít nhất 1 tiêu chí Rubric.");
         }
+        const positiveRubrics = rubrics.filter((r) => !r.is_deduction);
+        if (positiveRubrics.length === 0) {
+          throw new Error("Phải có ít nhất 1 tiêu chí cộng điểm (3 Gốc) cho câu tự luận.");
+        }
         const emptyCriterion = rubrics.some((r) => !r.criterion_name.trim());
         if (emptyCriterion) {
           throw new Error("Vui lòng nhập đầy đủ tên tiêu chí cho tất cả các tiêu chí Rubric.");
@@ -384,13 +419,14 @@ export default function QuestionsPage() {
         }
         if (!isPointsMatched) {
           throw new Error(
-            `Tổng điểm các tiêu chí Rubric (${totalRubricPoints.toFixed(2)}) phải bằng điểm mặc định câu hỏi (${currentDefaultPoints.toFixed(2)}). Vui lòng bấm 'Đồng bộ điểm câu hỏi' hoặc điều chỉnh lại.`
+            `Tổng điểm các tiêu chí cộng điểm 3 Gốc (${positiveRubricPoints.toFixed(2)}) phải bằng điểm mặc định câu hỏi (${currentDefaultPoints.toFixed(2)}). Vui lòng bấm 'Đồng bộ điểm câu hỏi' hoặc điều chỉnh lại.`
           );
         }
         payload.rubrics = rubrics.map((r) => ({
           criterion_name: r.criterion_name.trim(),
           description: r.description.trim(),
           max_points: r.max_points,
+          is_deduction: Boolean(r.is_deduction),
           level_descriptors: r.level_descriptors || {},
         }));
       }
@@ -686,16 +722,42 @@ export default function QuestionsPage() {
 
               {/* Essay Rubrics */}
               {q.type === "essay" && q.rubrics && q.rubrics.length > 0 && (
-                <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
-                  <div className="font-semibold text-slate-700 flex items-center gap-1.5">
-                    <BookOpen className="h-3.5 w-3.5 text-purple-600" />
-                    <span>Tiêu chí Rubric đánh giá:</span>
-                  </div>
-                  {q.rubrics.map((r, i) => (
-                    <div key={i} className="pl-5 text-slate-600">
-                      • <strong className="text-slate-800">{r.criterion_name}</strong> ({r.max_points} điểm): {r.description}
+                <div className="mt-3 p-3 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1.5">
+                  <div className="font-semibold text-slate-700 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <BookOpen className="h-3.5 w-3.5 text-purple-600" />
+                      <span>Tiêu chí Rubric đánh giá (3 Gốc & 3 Độc):</span>
                     </div>
-                  ))}
+                    <span className="text-[11px] text-slate-500 font-normal">Min điểm: 0.00</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+                    {q.rubrics.map((r, i) => (
+                      <div
+                        key={i}
+                        className={`p-2 rounded-lg border text-[11px] leading-relaxed ${
+                          r.is_deduction || r.criterion_name.toLowerCase().includes("trừ")
+                            ? "bg-rose-50/60 border-rose-200 text-rose-950"
+                            : "bg-emerald-50/60 border-emerald-200 text-emerald-950"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between font-bold mb-0.5">
+                          <span>{r.criterion_name}</span>
+                          <span
+                            className={`px-1.5 py-0.2 rounded text-[10px] ${
+                              r.is_deduction || r.criterion_name.toLowerCase().includes("trừ")
+                                ? "bg-rose-200 text-rose-800"
+                                : "bg-emerald-200 text-emerald-800"
+                            }`}
+                          >
+                            {r.is_deduction || r.criterion_name.toLowerCase().includes("trừ")
+                              ? `- Tối đa ${r.max_points}đ`
+                              : `+${r.max_points}đ`}
+                          </span>
+                        </div>
+                        {r.description && <p className="text-[10px] text-slate-600 line-clamp-2">{r.description}</p>}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -847,12 +909,12 @@ export default function QuestionsPage() {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={handleGenerateRubric}
                         disabled={generatingRubric}
-                        title="Tự động phân tích câu hỏi và sinh Rubric 3 Gốc bằng AI"
+                        title="Tự động phân tích câu hỏi và sinh Rubric 3 Gốc & 3 Độc bằng AI"
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition disabled:opacity-50"
                       >
                         {generatingRubric ? (
@@ -860,134 +922,211 @@ export default function QuestionsPage() {
                         ) : (
                           <Sparkles className="h-3.5 w-3.5" />
                         )}
-                        <span>{generatingRubric ? "AI đang tạo..." : "✨ Tạo Rubric AI 3 Gốc"}</span>
+                        <span>{generatingRubric ? "AI đang tạo..." : "✨ Tạo Rubric AI (3 Gốc & 3 Độc)"}</span>
                       </button>
 
                       <button
                         type="button"
-                        onClick={handleAddRubric}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition border border-slate-300"
-                        title="Thêm tiêu chí mới"
+                        onClick={() => handleAddRubric(false)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-xs font-semibold transition border border-emerald-300"
+                        title="Thêm tiêu chí cộng điểm (3 Gốc hoặc Phân tích 3 Độc)"
                       >
-                        <Plus className="h-3.5 w-3.5 text-blue-600" />
-                        <span>Thêm tiêu chí</span>
+                        <Plus className="h-3.5 w-3.5 text-emerald-600" />
+                        <span>+ Tiêu chí Cộng (+)</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleAddRubric(true)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold transition border border-rose-300"
+                        title="Thêm tiêu chí trừ điểm (3 Độc hoặc Vi phạm)"
+                      >
+                        <Plus className="h-3.5 w-3.5 text-rose-600" />
+                        <span>- Tiêu chí Trừ (-)</span>
                       </button>
                     </div>
                   </div>
 
-                  {/* Rubric Points Status Bar */}
-                  <div
-                    className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
-                      isPointsMatched
-                        ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-                        : "bg-amber-50 border-amber-200 text-amber-800"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1.5">
-                      {isPointsMatched ? (
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
-                      ) : (
-                        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
-                      )}
-                      <span>
-                        Tổng điểm Rubric: <strong>{totalRubricPoints.toFixed(2)}</strong> /{" "}
-                        <strong>{currentDefaultPoints.toFixed(2)}</strong> điểm
-                        {!isPointsMatched && " (Chưa khớp điểm câu hỏi)"}
-                      </span>
+                  {/* Rubric Rules & Points Status Bar */}
+                  <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs space-y-2">
+                    <div className="flex items-start gap-2 text-blue-900 leading-relaxed">
+                      <BookOpen className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong>Tùy chọn chấm tự luận 3 Gốc & 3 Độc:</strong> Giáo viên có toàn quyền chọn <strong>CỘNG (+)</strong> hoặc <strong>TRỪ (-)</strong> cho từng tiêu chí. Mặc định 3 Gốc cộng điểm, 3 Độc trừ điểm. Với câu hỏi yêu cầu <em>phân tích 3 Độc</em>, tiêu chí phân tích 3 Độc sẽ được <strong>Cộng điểm (+)</strong> khi học sinh làm đúng. Điểm câu tự luận sau khi trừ luôn <strong>tối thiểu là 0.00đ</strong>.
+                      </div>
                     </div>
 
-                    {!isPointsMatched && (
-                      <button
-                        type="button"
-                        onClick={handleSyncPoints}
-                        className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded text-xs transition shrink-0"
-                        title="Tự động cập nhật điểm câu hỏi bằng tổng điểm các tiêu chí"
-                      >
-                        Đồng bộ điểm ({totalRubricPoints.toFixed(2)})
-                      </button>
-                    )}
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-blue-200/80">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center gap-1 font-medium">
+                          {isPointsMatched ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
+                          )}
+                          <span>
+                            Điểm tiêu chí Cộng (+): <strong>{positiveRubricPoints.toFixed(2)}</strong> /{" "}
+                            <strong>{currentDefaultPoints.toFixed(2)}</strong> đ
+                            {!isPointsMatched && <span className="text-amber-700 font-semibold"> (Chưa khớp)</span>}
+                          </span>
+                        </span>
+
+                        {deductionRubricPoints > 0 && (
+                          <span className="text-rose-700 font-medium">
+                            • Trừ tối đa (-): <strong>{deductionRubricPoints.toFixed(2)}</strong> đ
+                          </span>
+                        )}
+                      </div>
+
+                      {!isPointsMatched && (
+                        <button
+                          type="button"
+                          onClick={handleSyncPoints}
+                          className="px-2 py-1 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded text-xs transition shrink-0"
+                          title="Tự động cập nhật điểm câu hỏi bằng tổng điểm các tiêu chí cộng"
+                        >
+                          Đồng bộ điểm câu hỏi ({positiveRubricPoints.toFixed(2)})
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Rubric Criteria List */}
-                  <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
-                    {rubrics.map((rubric, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 bg-slate-50/90 rounded-xl border border-slate-200 space-y-2.5 relative hover:border-slate-300 transition"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-700 px-2 py-0.5 rounded bg-white border border-slate-200">
-                            Tiêu chí #{idx + 1}
-                          </span>
-                          {rubrics.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveRubric(idx)}
-                              className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
-                              title="Xóa tiêu chí này"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
-                        </div>
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                    {rubrics.map((rubric, idx) => {
+                      const isDeduct = Boolean(rubric.is_deduction);
 
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <div className="sm:col-span-2">
+                      return (
+                        <div
+                          key={idx}
+                          className={`p-3 rounded-xl border space-y-2.5 relative transition ${
+                            isDeduct
+                              ? "bg-rose-50/50 border-rose-200 hover:border-rose-300"
+                              : "bg-slate-50/90 border-slate-200 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`text-xs font-bold px-2 py-0.5 rounded border ${
+                                  isDeduct
+                                    ? "bg-rose-100 text-rose-800 border-rose-200"
+                                    : "bg-white text-slate-700 border-slate-200"
+                                }`}
+                              >
+                                #{idx + 1}
+                              </span>
+
+                              {/* Toggle Type: 3 Gốc vs 3 Độc */}
+                              <div className="inline-flex rounded-lg border border-slate-200 bg-white p-0.5 text-[11px] font-semibold">
+                                <button
+                                  type="button"
+                                  onClick={() => handleRubricChange(idx, "is_deduction", false)}
+                                  className={`px-2 py-0.5 rounded-md transition ${
+                                    !isDeduct
+                                      ? "bg-emerald-600 text-white shadow-2xs"
+                                      : "text-slate-600 hover:text-slate-900"
+                                  }`}
+                                >
+                                  🌱 3 Gốc (+ Cộng điểm)
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRubricChange(idx, "is_deduction", true)}
+                                  className={`px-2 py-0.5 rounded-md transition ${
+                                    isDeduct
+                                      ? "bg-rose-600 text-white shadow-2xs"
+                                      : "text-slate-600 hover:text-slate-900"
+                                  }`}
+                                >
+                                  ⚠️ 3 Độc (- Trừ điểm)
+                                </button>
+                              </div>
+                            </div>
+
+                            {rubrics.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveRubric(idx)}
+                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                                title="Xóa tiêu chí này"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium text-slate-600 mb-1">
+                                Tên tiêu chí <span className="text-rose-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                required
+                                value={rubric.criterion_name}
+                                onChange={(e) =>
+                                  handleRubricChange(idx, "criterion_name", e.target.value)
+                                }
+                                placeholder={
+                                  isDeduct
+                                    ? "VD: Trừ điểm: Tham (Vị kỷ & Trục lợi)"
+                                    : "VD: Đạo đức (Tâm vị tha & Trách nhiệm)"
+                                }
+                                className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 mb-1">
+                                {isDeduct ? "Điểm trừ tối đa" : "Thang điểm cộng"}{" "}
+                                <span className="text-rose-500">*</span>
+                              </label>
+                              <input
+                                type="number"
+                                step="0.25"
+                                min="0.1"
+                                required
+                                value={rubric.max_points}
+                                onChange={(e) =>
+                                  handleRubricChange(idx, "max_points", e.target.value)
+                                }
+                                placeholder="VD: 2.00"
+                                className={`w-full px-2.5 py-1.5 border rounded-lg bg-white text-xs focus:outline-none focus:ring-2 font-semibold ${
+                                  isDeduct
+                                    ? "border-rose-300 text-rose-700 focus:ring-rose-500"
+                                    : "border-slate-300 text-slate-800 focus:ring-blue-500"
+                                }`}
+                              />
+                            </div>
+                          </div>
+
+                          <div>
                             <label className="block text-xs font-medium text-slate-600 mb-1">
-                              Tên tiêu chí <span className="text-rose-500">*</span>
+                              {isDeduct ? "Quy tắc trừ điểm khi có biểu hiện" : "Mô tả yêu cầu cần đạt"}
                             </label>
-                            <input
-                              type="text"
-                              required
-                              value={rubric.criterion_name}
+                            <textarea
+                              rows={2}
+                              value={rubric.description}
                               onChange={(e) =>
-                                handleRubricChange(idx, "criterion_name", e.target.value)
+                                handleRubricChange(idx, "description", e.target.value)
                               }
-                              placeholder="VD: Đạo đức (Tâm vị tha & Trách nhiệm)"
+                              placeholder={
+                                isDeduct
+                                  ? "Mô tả dấu hiệu tiêu cực khiến học sinh bị trừ điểm..."
+                                  : "Mô tả những gì học sinh cần thể hiện để đạt điểm..."
+                              }
                               className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
                             />
                           </div>
-                          <div>
-                            <label className="block text-xs font-medium text-slate-600 mb-1">
-                              Thang điểm <span className="text-rose-500">*</span>
-                            </label>
-                            <input
-                              type="number"
-                              step="0.25"
-                              min="0.1"
-                              required
-                              value={rubric.max_points}
-                              onChange={(e) =>
-                                handleRubricChange(idx, "max_points", e.target.value)
-                              }
-                              placeholder="VD: 3.50"
-                              className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-semibold text-slate-800"
-                            />
-                          </div>
                         </div>
-
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 mb-1">
-                            Mô tả yêu cầu cần đạt
-                          </label>
-                          <textarea
-                            rows={2}
-                            value={rubric.description}
-                            onChange={(e) =>
-                              handleRubricChange(idx, "description", e.target.value)
-                            }
-                            placeholder="Mô tả cụ thể những gì học viên cần thể hiện để đạt điểm..."
-                            className="w-full px-2.5 py-1.5 border border-slate-300 rounded-lg bg-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          />
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
 
                   {/* Add Rubric Button (Bottom) */}
                   <button
                     type="button"
-                    onClick={handleAddRubric}
+                    onClick={() => handleAddRubric(false)}
                     className="w-full py-2 border border-dashed border-slate-300 hover:border-blue-400 rounded-xl text-xs font-semibold text-slate-600 hover:text-blue-600 hover:bg-blue-50/40 transition flex items-center justify-center gap-1.5"
                   >
                     <Plus className="h-4 w-4" />

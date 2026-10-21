@@ -119,7 +119,7 @@ async def test_full_system_lifecycle_e2e():
         questions = start_res.json()["questions"]
 
         # Step 5: Student answers questions (Q1: single choice, Q2: multi-select, Q3: essay)
-        q1_obj = questions[0]
+        q1_obj = next(q for q in questions if q["type"] == "single_choice")
         q1_correct = [o["id"] for o in q1_obj["options"] if "vị tha" in o["content"]]
         await ac.put(f"/api/v1/student/attempts/{attempt_id}/answers", json={
             "exam_question_id": q1_obj["exam_question_id"],
@@ -127,7 +127,7 @@ async def test_full_system_lifecycle_e2e():
             "client_version": 1
         }, headers=s_headers)
 
-        q2_obj = questions[1]
+        q2_obj = next(q for q in questions if q["type"] == "multiple_select")
         q2_correct = [o["id"] for o in q2_obj["options"] if o["content"] in ["Tham lam ích kỷ", "Sân hận giận dữ", "Si mê tăm tối"]]
         await ac.put(f"/api/v1/student/attempts/{attempt_id}/answers", json={
             "exam_question_id": q2_obj["exam_question_id"],
@@ -135,7 +135,7 @@ async def test_full_system_lifecycle_e2e():
             "client_version": 1
         }, headers=s_headers)
 
-        q3_obj = questions[2]
+        q3_obj = next(q for q in questions if q["type"] == "essay")
         essay_content = (
             "Có những buổi sáng trời lạnh em rất muốn ngủ tiếp thay vì thức dậy học bài. "
             "Nhưng em tự nhắc nhở bản thân rằng sự kiên trì hôm nay sẽ kiến tạo tương lai. "

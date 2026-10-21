@@ -26,6 +26,7 @@ class QuestionRubricBase(BaseModel):
     description: Optional[str] = None
     max_points: Decimal = Field(..., ge=0)
     level_descriptors: Dict[str, Any] = Field(default_factory=dict)
+    is_deduction: bool = Field(default=False, description="Đánh dấu True nếu là tiêu chí trừ điểm (3 Độc: Tham, Sân, Si)")
 
 
 class QuestionRubricCreate(QuestionRubricBase):

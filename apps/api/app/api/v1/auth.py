@@ -107,7 +107,8 @@ async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db))
         user_id=user.id,
         email=user.email,
         full_name=user.full_name,
-        role=user.role
+        role=user.role,
+        phone=user.phone or ""
     )
 
 
@@ -135,7 +136,8 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
         user_id=user.id,
         email=user.email,
         full_name=user.full_name,
-        role=user.role
+        role=user.role,
+        phone=user.phone or ""
     )
 
 
@@ -165,7 +167,8 @@ async def refresh_token(request: RefreshTokenRequest, db: AsyncSession = Depends
         user_id=user.id,
         email=user.email,
         full_name=user.full_name,
-        role=user.role
+        role=user.role,
+        phone=user.phone or ""
     )
 
 

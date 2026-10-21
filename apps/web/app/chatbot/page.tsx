@@ -24,7 +24,9 @@ import {
   ShieldAlert,
   Compass
 } from "lucide-react";
-import { apiFetch, saveAuth, AuthTokens } from "../../lib/api";
+import { apiFetch, saveAuth, getSavedAuth, clearAuth, AuthTokens, UserProfile } from "../../lib/api";
+import { validateEssayAnswer } from "../../lib/essayValidator";
+import { validateVietnamesePhoneNumber } from "../../lib/phoneValidator";
 
 interface PublicClass {
   id: string;
@@ -72,10 +74,14 @@ interface StudentResultData {
       nghi_luc?: { score?: number; evidence?: string; direct_quotes?: string[] };
     };
     three_poisons?: {
-      tham?: { detected?: boolean; manifestation?: string };
-      san?: { detected?: boolean; manifestation?: string };
-      si?: { detected?: boolean; manifestation?: string };
-    };
+      tham?: { detected?: boolean; manifestation?: string } | string;
+      san?: { detected?: boolean; manifestation?: string } | string;
+      si?: { detected?: boolean; manifestation?: string } | string;
+      points_deducted?: number;
+      tham_deduction?: number;
+      san_deduction?: number;
+      si_deduction?: number;
+    } | any;
     overall_reflection?: string;
     transformative_advice?: string;
     practical_action_plan?: string[];
@@ -107,6 +113,10 @@ export default function ChatbotPage() {
   const [inputText, setInputText] = useState("");
   const [currentStep, setCurrentStep] = useState<ChatStep>("GREETING_NAME");
   
+  // Auth state
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userRole, setUserRole] = useState("");
+
   // Student Info
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
@@ -140,16 +150,70 @@ export default function ChatbotPage() {
     scrollToBottom();
   }, [messages, currentStep, currentQuestionIdx]);
 
-  // Initial greeting
+  // Initial authentication check & greeting
   useEffect(() => {
-    const greetingMsg: ChatMessage = {
-      id: "greet-1",
-      sender: "bot",
-      text: "Xin chào bạn! Mình là AI Trợ Lý Khảo Thí 3 Gốc 🤖.\n\nBạn có thể tham gia làm bài khảo sát/thi trực tiếp ngay tại đây mà không cần đăng nhập hay nhớ tài khoản. Sau khi nộp bài, AI sẽ chấm điểm và phân tích 3 Gốc ngay lập tức!\n\nĐể bắt đầu, bạn hãy nhập Họ và tên của mình nhé:",
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      type: "text"
-    };
-    setMessages([greetingMsg]);
+    const saved = getSavedAuth();
+    const isGuest = !saved || !saved.email || saved.email.endsWith("@guest.local");
+
+    if (saved && !isGuest && saved.access_token) {
+      // User is logged in: skip asking name and phone!
+      setIsLoggedIn(true);
+      setUserRole(saved.role || "");
+      const name = saved.full_name || "Bạn";
+      setFullName(name);
+      setPhone(saved.phone || "");
+      setCurrentStep("SELECT_CLASS");
+
+      const greetingMsg: ChatMessage = {
+        id: "greet-user",
+        sender: "bot",
+        text: `Xin chào **${name}**! Mình là AI Trợ Lý Khảo Thí 3 Gốc 🤖.\n\nHệ thống nhận diện bạn đã đăng nhập tài khoản. Bạn **không cần nhập lại họ tên hay số điện thoại**.\n\nDưới đây là danh sách các lớp học đang mở bài thi. Bạn hãy chọn lớp để bắt đầu làm bài nhé:`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: "class_picker"
+      };
+      setMessages([greetingMsg]);
+
+      // Verify token and fetch profile
+      apiFetch<UserProfile>("/auth/me")
+        .then((profile) => {
+          if (profile?.full_name) {
+            setFullName(profile.full_name);
+          }
+          if (profile?.phone) {
+            setPhone(profile.phone);
+          }
+        })
+        .catch(() => {
+          // Token expired or invalid
+          clearAuth();
+          setIsLoggedIn(false);
+          setCurrentStep("GREETING_NAME");
+          setMessages([
+            {
+              id: "greet-expired",
+              sender: "bot",
+              text: "Phiên đăng nhập đã hết hạn. Bạn có thể tham gia làm bài trực tiếp mà không cần đăng nhập.\n\nĐể bắt đầu, bạn hãy nhập Họ và tên của mình nhé:",
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              type: "text"
+            }
+          ]);
+        });
+    } else {
+      // User is NOT logged in: ask for name & phone
+      if (saved && isGuest) {
+        clearAuth();
+      }
+      setIsLoggedIn(false);
+      setCurrentStep("GREETING_NAME");
+      const greetingMsg: ChatMessage = {
+        id: "greet-1",
+        sender: "bot",
+        text: "Xin chào bạn! Mình là AI Trợ Lý Khảo Thí 3 Gốc 🤖.\n\nBạn có thể tham gia làm bài khảo sát/thi trực tiếp ngay tại đây mà không cần đăng nhập hay nhớ tài khoản. Sau khi nộp bài, AI sẽ chấm điểm và phân tích 3 Gốc ngay lập tức!\n\nĐể bắt đầu, bạn hãy nhập Họ và tên của mình nhé:",
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        type: "text"
+      };
+      setMessages([greetingMsg]);
+    }
 
     // Load available public classes
     apiFetch<PublicClass[]>("/classes/public")
@@ -205,7 +269,7 @@ export default function ChatbotPage() {
       setTimeout(() => {
         addMessage(
           "bot",
-          `Rất vui được gặp bạn, ${trimmed}! 🎉\n\nTiếp theo, bạn vui lòng nhập Số điện thoại của bạn để hệ thống ghi nhận thông tin làm bài:`
+          `Rất vui được gặp bạn, ${trimmed}! 🎉\n\nTiếp theo, bạn vui lòng nhập **Số điện thoại di động (10 số)** của bạn để hệ thống ghi nhận thông tin làm bài (VD: 0987654321):`
         );
       }, 500);
       return;
@@ -213,17 +277,22 @@ export default function ChatbotPage() {
 
     // Step 2: Input Phone
     if (currentStep === "ASK_PHONE") {
-      if (trimmed.length < 8) {
+      const phoneValidation = validateVietnamesePhoneNumber(trimmed);
+      if (!phoneValidation.isValid) {
         addMessage("user", trimmed);
         setInputText("");
         setTimeout(() => {
-          addMessage("bot", "Số điện thoại có vẻ chưa đúng định dạng (ít nhất 8 chữ số). Bạn vui lòng nhập lại nhé:");
+          addMessage(
+            "bot",
+            `⚠️ **Số điện thoại chưa hợp lệ:** ${phoneValidation.reason}\n\n👉 Bạn vui lòng kiểm tra và nhập lại **Số điện thoại di động 10 số của Việt Nam** (bắt đầu bằng 03, 05, 07, 08 hoặc 09, ví dụ: 0912345678, 0987654321) nhé!`
+          );
         }, 300);
         return;
       }
 
+      const validPhone = phoneValidation.normalizedPhone || trimmed;
       addMessage("user", trimmed);
-      setPhone(trimmed);
+      setPhone(validPhone);
       setInputText("");
       setCurrentStep("SELECT_CLASS");
 
@@ -243,7 +312,18 @@ export default function ChatbotPage() {
       if (q.type === "essay") {
         addMessage("user", trimmed);
         setInputText("");
-        
+
+        const essayValidation = validateEssayAnswer(trimmed);
+        if (!essayValidation.isValid) {
+          setTimeout(() => {
+            addMessage(
+              "bot",
+              `⚠️ **Câu trả lời tự luận chưa hợp lệ:** ${essayValidation.reason}.\n\n👉 Để rèn luyện phẩm chất và tư duy 3 Gốc, bạn hãy dành chút thời gian suy ngẫm và **nhập lại câu trả lời đầy đủ, nghiêm túc** cho Câu ${currentQuestionIdx + 1} nhé! ✍️`
+            );
+          }, 400);
+          return;
+        }
+
         // Save essay answer
         await saveAnswerData(q.exam_question_id, [], trimmed);
 
@@ -267,30 +347,42 @@ export default function ChatbotPage() {
     }, 400);
   };
 
-  // Step 3: Student selects Class
+  // Step: Student selects Class
   const handleSelectClass = async (cls: PublicClass) => {
     setSelectedClass(cls);
     addMessage("user", `Tôi chọn lớp: ${cls.name}`);
 
-    // Call guest-entry API
     try {
       addMessage("bot", `Đang ghi danh bạn vào lớp "${cls.name}" và chuẩn bị bài thi...`);
       
-      const guestRes = await apiFetch<AuthTokens & { assignment_id: string }>("/auth/guest-entry", {
-        method: "POST",
-        body: JSON.stringify({
-          full_name: fullName,
-          phone: phone,
-          class_id: cls.id,
-        }),
-      });
+      let assignmentId = "";
 
-      // Save auth tokens
-      saveAuth(guestRes);
+      if (isLoggedIn) {
+        // Logged-in student: Enter class exam directly with account
+        const enterRes = await apiFetch<{ assignment_id: string; class_id: string; class_name: string; exam_title: string }>(
+          `/student/classes/${cls.id}/enter`,
+          { method: "POST" }
+        );
+        assignmentId = enterRes.assignment_id;
+      } else {
+        // Guest: Call guest-entry API
+        const guestRes = await apiFetch<AuthTokens & { assignment_id: string }>("/auth/guest-entry", {
+          method: "POST",
+          body: JSON.stringify({
+            full_name: fullName,
+            phone: phone,
+            class_id: cls.id,
+          }),
+        });
+
+        // Save auth tokens
+        saveAuth(guestRes);
+        assignmentId = guestRes.assignment_id;
+      }
 
       // Start attempt
       const attemptRes = await apiFetch<StartAttemptData>(
-        `/student/assignments/${guestRes.assignment_id}/start`,
+        `/student/assignments/${assignmentId}/start`,
         { method: "POST" }
       );
 
@@ -462,6 +554,27 @@ export default function ChatbotPage() {
   // Submit Exam & Poll AI Results
   const handleSubmitExam = async () => {
     if (!attempt) return;
+
+    // Validate all essay questions before submitting
+    for (let idx = 0; idx < attempt.questions.length; idx++) {
+      const q = attempt.questions[idx];
+      if (q.type === "essay") {
+        const text = answers[q.exam_question_id]?.text_response || "";
+        const val = validateEssayAnswer(text);
+        if (!val.isValid) {
+          setCurrentStep("EXAM_IN_PROGRESS");
+          setCurrentQuestionIdx(idx);
+          addMessage(
+            "bot",
+            `⚠️ Không thể nộp bài vì Câu ${idx + 1} (Tự luận) chưa có câu trả lời hợp lệ:\n"${val.reason}".\n\n👉 Bạn vui lòng **nhập lại câu trả lời đầy đủ, nghiêm túc** cho Câu ${idx + 1} trước khi nộp bài nhé! ✍️`,
+            "question_card",
+            { questionIndex: idx }
+          );
+          return;
+        }
+      }
+    }
+
     setCurrentStep("GRADING");
 
     addMessage("user", "✅ Nộp bài thi");
@@ -530,24 +643,38 @@ export default function ChatbotPage() {
 
   // Restart chat
   const handleRestart = () => {
-    setCurrentStep("GREETING_NAME");
-    setFullName("");
-    setPhone("");
     setSelectedClass(null);
     setAttempt(null);
     setAnswers({});
     setResult(null);
     setSecondsRemaining(null);
     setCurrentQuestionIdx(0);
-    setMessages([
-      {
-        id: "greet-restart",
-        sender: "bot",
-        text: "Chào mừng bạn trở lại! Mình là AI Trợ Lý Khảo Thí 3 Gốc 🤖.\n\nHãy nhập Họ và tên của bạn để bắt đầu bài thi mới nhé:",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        type: "text"
-      }
-    ]);
+
+    if (isLoggedIn) {
+      setCurrentStep("SELECT_CLASS");
+      setMessages([
+        {
+          id: "greet-restart-" + Date.now(),
+          sender: "bot",
+          text: `Chào mừng bạn **${fullName}** quay lại! 🤖\n\nDưới đây là danh sách các lớp học đang mở bài thi. Bạn hãy chọn lớp để làm bài nhé:`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: "class_picker"
+        }
+      ]);
+    } else {
+      setCurrentStep("GREETING_NAME");
+      setFullName("");
+      setPhone("");
+      setMessages([
+        {
+          id: "greet-restart-" + Date.now(),
+          sender: "bot",
+          text: "Chào mừng bạn trở lại! Mình là AI Trợ Lý Khảo Thí 3 Gốc 🤖.\n\nHãy nhập Họ và tên của bạn để bắt đầu bài thi mới nhé:",
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          type: "text"
+        }
+      ]);
+    }
   };
 
   return (
@@ -567,7 +694,11 @@ export default function ChatbotPage() {
               </span>
             </div>
             <p className="text-xs text-slate-500">
-              {attempt ? `Đang thi: ${attempt.exam_title}` : "Khảo thí thông minh không cần đăng nhập"}
+              {attempt 
+                ? `Đang thi: ${attempt.exam_title}` 
+                : isLoggedIn 
+                ? `Đã đăng nhập: ${fullName}${userRole ? ` (${userRole === "teacher" ? "Giáo viên" : "Học sinh"})` : ""}` 
+                : "Khảo thí thông minh không cần đăng nhập"}
             </p>
           </div>
         </div>
@@ -592,6 +723,23 @@ export default function ChatbotPage() {
             >
               <span>Nộp bài</span>
             </button>
+          )}
+
+          {isLoggedIn ? (
+            <Link
+              href={userRole === "teacher" ? "/teacher/dashboard" : "/student/dashboard"}
+              className="px-3 py-1.5 text-xs text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition font-medium flex items-center gap-1"
+            >
+              <GraduationCap className="h-3.5 w-3.5" />
+              <span>Bảng điều khiển</span>
+            </Link>
+          ) : (
+            <Link
+              href="/login"
+              className="px-3 py-1.5 text-xs text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition font-medium"
+            >
+              Đăng nhập
+            </Link>
           )}
 
           <Link
@@ -930,7 +1078,9 @@ export default function ChatbotPage() {
                               <span>Đạo Đức</span>
                             </div>
                             <p className="text-emerald-950 leading-relaxed">
-                              {msg.resultData.ai_feedback.three_roots.dao_duc.evidence || "Có ý thức hướng thiện và tinh thần trách nhiệm."}
+                              {typeof msg.resultData.ai_feedback.three_roots.dao_duc === "string"
+                                ? msg.resultData.ai_feedback.three_roots.dao_duc
+                                : (msg.resultData.ai_feedback.three_roots.dao_duc.evidence || "Có ý thức hướng thiện và tinh thần trách nhiệm.")}
                             </p>
                           </div>
                         )}
@@ -943,7 +1093,9 @@ export default function ChatbotPage() {
                               <span>Trí Tuệ</span>
                             </div>
                             <p className="text-blue-950 leading-relaxed">
-                              {msg.resultData.ai_feedback.three_roots.tri_tue.evidence || "Tư duy mạch lạc, có sự đúc kết đa chiều."}
+                              {typeof msg.resultData.ai_feedback.three_roots.tri_tue === "string"
+                                ? msg.resultData.ai_feedback.three_roots.tri_tue
+                                : (msg.resultData.ai_feedback.three_roots.tri_tue.evidence || "Tư duy mạch lạc, có sự đúc kết đa chiều.")}
                             </p>
                           </div>
                         )}
@@ -956,7 +1108,9 @@ export default function ChatbotPage() {
                               <span>Nghị Lực (Dũng - Nhẫn - Tĩnh)</span>
                             </div>
                             <p className="text-amber-950 leading-relaxed">
-                              {msg.resultData.ai_feedback.three_roots.nghi_luc.evidence || "Thể hiện tinh thần dám nghĩ, dám làm và vượt khó."}
+                              {typeof msg.resultData.ai_feedback.three_roots.nghi_luc === "string"
+                                ? msg.resultData.ai_feedback.three_roots.nghi_luc
+                                : (msg.resultData.ai_feedback.three_roots.nghi_luc.evidence || "Thể hiện tinh thần dám nghĩ, dám làm và vượt khó.")}
                             </p>
                           </div>
                         )}
@@ -964,27 +1118,37 @@ export default function ChatbotPage() {
                     </div>
                   )}
 
-                  {/* 3 Poisons Warning (if detected) */}
+                  {/* 3 Poisons Warning */}
                   {msg.resultData.ai_feedback?.three_poisons && (
-                    (msg.resultData.ai_feedback.three_poisons.tham?.detected ||
-                     msg.resultData.ai_feedback.three_poisons.san?.detected ||
-                     msg.resultData.ai_feedback.three_poisons.si?.detected) && (
-                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 space-y-1">
-                        <div className="font-bold flex items-center gap-1.5 text-rose-700">
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 space-y-1">
+                      <div className="font-bold flex items-center justify-between text-rose-700">
+                        <span className="flex items-center gap-1.5">
                           <ShieldAlert className="h-4 w-4" />
-                          <span>Gợi Ý Chuyển Hóa 3 Độc (Tham - Sân - Si)</span>
-                        </div>
-                        {msg.resultData.ai_feedback.three_poisons.tham?.detected && (
-                          <p>• <strong>Tham:</strong> {msg.resultData.ai_feedback.three_poisons.tham.manifestation}</p>
-                        )}
-                        {msg.resultData.ai_feedback.three_poisons.san?.detected && (
-                          <p>• <strong>Sân:</strong> {msg.resultData.ai_feedback.three_poisons.san.manifestation}</p>
-                        )}
-                        {msg.resultData.ai_feedback.three_poisons.si?.detected && (
-                          <p>• <strong>Si:</strong> {msg.resultData.ai_feedback.three_poisons.si.manifestation}</p>
-                        )}
+                          <span>Nhận Diện & Trừ Điểm 3 Độc (Tham - Sân - Si)</span>
+                        </span>
+                        {msg.resultData.ai_feedback.three_poisons.points_deducted !== undefined &&
+                          Number(msg.resultData.ai_feedback.three_poisons.points_deducted) > 0 && (
+                            <span className="bg-rose-200 text-rose-900 px-2 py-0.5 rounded text-[10px] font-bold">
+                              Trừ {Number(msg.resultData.ai_feedback.three_poisons.points_deducted).toFixed(2)}đ (Min: 0đ)
+                            </span>
+                          )}
                       </div>
-                    )
+                      {typeof msg.resultData.ai_feedback.three_poisons.tham === "string" ? (
+                        <p>• <strong>Tham:</strong> {msg.resultData.ai_feedback.three_poisons.tham}</p>
+                      ) : msg.resultData.ai_feedback.three_poisons.tham?.detected && (
+                        <p>• <strong>Tham:</strong> {msg.resultData.ai_feedback.three_poisons.tham.manifestation}</p>
+                      )}
+                      {typeof msg.resultData.ai_feedback.three_poisons.san === "string" ? (
+                        <p>• <strong>Sân:</strong> {msg.resultData.ai_feedback.three_poisons.san}</p>
+                      ) : msg.resultData.ai_feedback.three_poisons.san?.detected && (
+                        <p>• <strong>Sân:</strong> {msg.resultData.ai_feedback.three_poisons.san.manifestation}</p>
+                      )}
+                      {typeof msg.resultData.ai_feedback.three_poisons.si === "string" ? (
+                        <p>• <strong>Si:</strong> {msg.resultData.ai_feedback.three_poisons.si}</p>
+                      ) : msg.resultData.ai_feedback.three_poisons.si?.detected && (
+                        <p>• <strong>Si:</strong> {msg.resultData.ai_feedback.three_poisons.si.manifestation}</p>
+                      )}
+                    </div>
                   )}
 
                   {/* Transformative Advice */}
@@ -999,14 +1163,23 @@ export default function ChatbotPage() {
                   )}
 
                   {/* Bottom Actions */}
-                  <div className="pt-2 flex items-center gap-3">
+                  <div className="pt-2 flex flex-wrap items-center gap-3">
                     <button
                       onClick={handleRestart}
-                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs transition flex items-center justify-center gap-1.5"
+                      className="flex-1 min-w-[140px] py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-xl text-xs transition flex items-center justify-center gap-1.5"
                     >
                       <RefreshCw className="h-3.5 w-3.5" />
                       <span>Làm bài thi khác</span>
                     </button>
+                    {isLoggedIn && (
+                      <Link
+                        href={userRole === "teacher" ? "/teacher/dashboard" : "/student/dashboard"}
+                        className="py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs transition flex items-center justify-center gap-1.5"
+                      >
+                        <Award className="h-3.5 w-3.5" />
+                        <span>Bảng điểm cá nhân</span>
+                      </Link>
+                    )}
                     <Link
                       href="/"
                       className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl text-xs transition"
@@ -1050,7 +1223,7 @@ export default function ChatbotPage() {
               currentStep === "GREETING_NAME"
                 ? "Nhập họ và tên của bạn..."
                 : currentStep === "ASK_PHONE"
-                ? "Nhập số điện thoại (ví dụ: 0912345678)..."
+                ? "Nhập số điện thoại di động 10 số (VD: 0987654321)..."
                 : currentStep === "EXAM_IN_PROGRESS" && attempt?.questions[currentQuestionIdx]?.type === "essay"
                 ? "Nhập câu trả lời tự luận rồi nhấn Gửi..."
                 : currentStep === "SELECT_CLASS"

@@ -9,11 +9,12 @@ from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 from app.models.exams import Exam, ExamAssignment, ExamQuestion, ExamStatus
 from app.models.attempts import Attempt, AttemptStatus, Answer
-from app.models.classes import Enrollment
+from app.models.classes import Class, Enrollment
 from app.models.grading import GradingResult
 from app.models.questions import QuestionType
 from app.schemas.attempt import AnswerSaveRequest, AttemptStartResponse, SubmitAttemptResponse
 from app.services.grading_engine import ObjectiveGradingEngine
+from app.services.essay_validator import validate_essay_response
 from app.core.queue import enqueue_job
 
 
@@ -26,6 +27,58 @@ def _ensure_utc(dt: Optional[datetime]) -> Optional[datetime]:
 
 
 class ExamTakingService:
+    @staticmethod
+    async def enter_class_exam(db: AsyncSession, class_id: str, student_id: str) -> Dict[str, Any]:
+        result = await db.execute(select(Class).where(Class.id == class_id))
+        class_obj = result.scalar_one_or_none()
+        if not class_obj:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Không tìm thấy lớp học")
+
+        # Auto-enroll student into class if not enrolled yet
+        enr_res = await db.execute(
+            select(Enrollment).where(
+                Enrollment.class_id == class_obj.id,
+                Enrollment.student_id == student_id
+            )
+        )
+        if not enr_res.scalar_one_or_none():
+            db.add(Enrollment(class_id=class_obj.id, student_id=student_id))
+            await db.commit()
+
+        # Find active assignment
+        now = datetime.now(timezone.utc)
+        assignment_result = await db.execute(
+            select(ExamAssignment).where(
+                ExamAssignment.class_id == class_obj.id,
+                ExamAssignment.open_at <= now,
+                ExamAssignment.close_at >= now
+            ).options(selectinload(ExamAssignment.exam)).order_by(ExamAssignment.created_at.desc())
+        )
+        assignment = assignment_result.scalars().first()
+        if not assignment:
+            # Fallback to latest assignment for this class and ensure valid window
+            fallback_res = await db.execute(
+                select(ExamAssignment).where(
+                    ExamAssignment.class_id == class_obj.id
+                ).options(selectinload(ExamAssignment.exam)).order_by(ExamAssignment.created_at.desc())
+            )
+            assignment = fallback_res.scalars().first()
+            if assignment:
+                if assignment.open_at > now or assignment.close_at < now:
+                    assignment.open_at = now - timedelta(minutes=10)
+                    assignment.close_at = now + timedelta(days=7)
+                    await db.commit()
+
+        if not assignment:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lớp hiện chưa có bài thi nào được giao.")
+
+        return {
+            "assignment_id": assignment.id,
+            "class_id": class_obj.id,
+            "class_name": class_obj.name,
+            "exam_title": assignment.exam.title if assignment.exam else ""
+        }
+
     @staticmethod
     async def get_student_assignments(db: AsyncSession, student_id: str) -> List[Dict[str, Any]]:
         # Find all classes student is enrolled in
@@ -165,6 +218,8 @@ class ExamTakingService:
 
     @staticmethod
     async def _build_start_response(attempt: Attempt, exam: Exam) -> AttemptStartResponse:
+        import random
+
         # Strip correct answers and internal rubrics before sending to student
         sanitized_questions = []
         for q in exam.questions:
@@ -176,15 +231,40 @@ class ExamTakingService:
                     "content": opt["content"],
                     "order_index": opt.get("order_index", 0)
                 })
-            
+
+            # Shuffle options deterministically per attempt and question
+            if orig.get("type") != QuestionType.ESSAY.value and len(options) > 1:
+                opt_rng = random.Random(f"{attempt.id}_{q.id}")
+                opt_rng.shuffle(options)
+                for opt_idx, opt in enumerate(options):
+                    opt["order_index"] = opt_idx
+
+            # Prepare rubrics for essay questions (inform student of 3 Roots and 3 Poisons criteria)
+            rubrics = []
+            if orig.get("type") == QuestionType.ESSAY.value:
+                for r in (q.frozen_rubric_data or []):
+                    rubrics.append({
+                        "criterion_name": r.get("criterion_name"),
+                        "description": r.get("description"),
+                        "max_points": float(r.get("max_points", 0)),
+                        "is_deduction": bool(r.get("is_deduction", False))
+                    })
+
             sanitized_questions.append({
                 "exam_question_id": q.id,
                 "order_index": q.order_index,
                 "points": float(q.points),
                 "type": orig.get("type"),
                 "content": orig.get("content"),
-                "options": options
+                "options": options,
+                "rubrics": rubrics
             })
+
+        # Shuffle questions deterministically for this attempt
+        q_rng = random.Random(attempt.id)
+        q_rng.shuffle(sanitized_questions)
+        for idx, sq in enumerate(sanitized_questions):
+            sq["order_index"] = idx + 1
 
         answers_list = [
             {
@@ -289,6 +369,22 @@ class ExamTakingService:
         total_objective = Decimal("0.00")
         has_essay = False
         essay_answer_ids = []
+
+        # Validate essay answers before submitting: catch nonsense / evasive / gibberish answers
+        for eq in exam.questions:
+            q_type = eq.frozen_question_data.get("type")
+            if q_type == QuestionType.ESSAY.value:
+                student_ans = answers_by_qid.get(eq.id)
+                essay_text = (student_ans.text_response if student_ans else "").strip()
+                is_valid, reason = validate_essay_response(essay_text)
+                if not is_valid:
+                    q_title = eq.frozen_question_data.get("content", "")
+                    if len(q_title) > 60:
+                        q_title = q_title[:60] + "..."
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Câu hỏi tự luận '{q_title}' có câu trả lời chưa hợp lệ ({reason}). Vui lòng nhập lại câu trả lời nghiêm túc trước khi nộp bài."
+                    )
 
         for eq in exam.questions:
             q_type = eq.frozen_question_data.get("type")

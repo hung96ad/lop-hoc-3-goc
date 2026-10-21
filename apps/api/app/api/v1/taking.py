@@ -18,6 +18,15 @@ async def get_assignments(
     return await ExamTakingService.get_student_assignments(db, current_student.id)
 
 
+@router.post("/classes/{class_id}/enter", response_model=Dict[str, Any])
+async def enter_class_exam(
+    class_id: str,
+    current_student: User = Depends(get_current_student),
+    db: AsyncSession = Depends(get_db)
+):
+    return await ExamTakingService.enter_class_exam(db, class_id, current_student.id)
+
+
 @router.post("/assignments/{assignment_id}/start", response_model=AttemptStartResponse)
 async def start_attempt(
     assignment_id: str,
