@@ -1,7 +1,17 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Generic, TypeVar
 from pydantic import BaseModel, Field, ConfigDict
+
+T = TypeVar("T")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: List[T]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 class QuestionOptionBase(BaseModel):
@@ -99,3 +109,25 @@ class QuestionImportResult(BaseModel):
     failed_count: int
     imported_questions: List[QuestionRead]
     errors: List[QuestionImportError]
+
+
+class GenerateFromPDFRequest(BaseModel):
+    single_choice_count: int = Field(default=0, ge=0, description="Số câu trắc nghiệm chọn 1 đáp án")
+    multiple_select_count: int = Field(default=0, ge=0, description="Số câu trắc nghiệm chọn nhiều đáp án")
+    essay_count: int = Field(default=0, ge=0, description="Số câu tự luận")
+    subject_id: Optional[str] = None
+    class_id: Optional[str] = None
+    default_points_single: Decimal = Field(default=Decimal("1.00"), ge=0)
+    default_points_multiple: Decimal = Field(default=Decimal("1.00"), ge=0)
+    default_points_essay: Decimal = Field(default=Decimal("10.00"), ge=0)
+
+
+class GenerateFromPDFResult(BaseModel):
+    total_generated: int
+    saved_count: int
+    questions: List[QuestionRead]
+    message: str
+
+
+class BulkDeleteRequest(BaseModel):
+    question_ids: List[str] = Field(..., min_length=1)

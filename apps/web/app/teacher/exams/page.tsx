@@ -17,6 +17,7 @@ import {
   Square
 } from "lucide-react";
 import { apiFetch } from "../../../lib/api";
+import Pagination from "../../../components/Pagination";
 
 interface QuestionItem {
   id: string;
@@ -40,6 +41,7 @@ interface ExamItem {
   status: "draft" | "published" | "archived";
   duration_minutes: number;
   total_score: string;
+  shuffle_questions: boolean;
   questions?: ExamQuestionItem[];
   created_at: string;
 }
@@ -58,12 +60,25 @@ interface SubjectItem {
   question_count: number;
 }
 
+interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 export default function ExamsPage() {
   const [exams, setExams] = useState<ExamItem[]>([]);
+  const [examTotal, setExamTotal] = useState(0);
   const [questions, setQuestions] = useState<QuestionItem[]>([]);
   const [classes, setClasses] = useState<ClassItem[]>([]);
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Create exam modal
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -73,8 +88,10 @@ export default function ExamsPage() {
   const [selectedSubjectId, setSelectedSubjectId] = useState("");
   const [filteredQuestions, setFilteredQuestions] = useState<QuestionItem[]>([]);
   const [selectedQuestions, setSelectedQuestions] = useState<{ [qId: string]: string }>({});
+  const [shuffleQuestions, setShuffleQuestions] = useState(false);
   const [createSubmitting, setCreateSubmitting] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [shuffleLoading, setShuffleLoading] = useState<string | null>(null);
 
   // Assign exam modal
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -86,18 +103,19 @@ export default function ExamsPage() {
   const [assignSubmitting, setAssignSubmitting] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = async (page = currentPage, size = pageSize) => {
     try {
       setLoading(true);
-      const [examList, questionList, classList, subjectList] = await Promise.all([
-        apiFetch<ExamItem[]>("/exams"),
-        apiFetch<QuestionItem[]>("/questions").catch(() => []),
-        apiFetch<ClassItem[]>("/classes").catch(() => []),
+      const [examData, questionList, classList, subjectList] = await Promise.all([
+        apiFetch<PaginatedResponse<ExamItem>>(`/exams?page=${page}&page_size=${size}`),
+        apiFetch<PaginatedResponse<QuestionItem>>("/questions?page=1&page_size=200").catch(() => ({ items: [] as QuestionItem[], total: 0, page: 1, page_size: 200, total_pages: 1 })),
+        apiFetch<PaginatedResponse<ClassItem>>("/classes?page=1&page_size=200").catch(() => ({ items: [] as ClassItem[], total: 0, page: 1, page_size: 200, total_pages: 1 })),
         apiFetch<SubjectItem[]>("/subjects").catch(() => []),
       ]);
-      setExams(examList);
-      setQuestions(questionList);
-      setClasses(classList);
+      setExams(examData.items);
+      setExamTotal(examData.total);
+      setQuestions(questionList.items);
+      setClasses(classList.items);
       setSubjects(subjectList);
     } catch (err: any) {
       console.error(err);
@@ -107,8 +125,8 @@ export default function ExamsPage() {
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    loadData(currentPage, pageSize);
+  }, [currentPage, pageSize]);
 
   // Filter questions when subject changes
   useEffect(() => {
@@ -203,6 +221,7 @@ export default function ExamsPage() {
           total_score: calculateTotalScore(),
           subject_id: selectedSubjectId || null,
           questions: qPayload,
+          shuffle_questions: shuffleQuestions,
         }),
       });
 
@@ -211,7 +230,9 @@ export default function ExamsPage() {
       setDescription("");
       setSelectedSubjectId("");
       setSelectedQuestions({});
-      loadData();
+      setShuffleQuestions(false);
+      setCurrentPage(1);
+      loadData(1, pageSize);
     } catch (err: any) {
       setCreateError(err.message || "Tạo đề thi thất bại.");
     } finally {
@@ -222,9 +243,24 @@ export default function ExamsPage() {
   const handlePublishExam = async (examId: string) => {
     try {
       await apiFetch(`/exams/${examId}/publish`, { method: "POST" });
-      loadData();
+      loadData(currentPage, pageSize);
     } catch (err: any) {
       alert("Lỗi khi xuất bản đề thi: " + err.message);
+    }
+  };
+
+  const handleToggleShuffle = async (exam: ExamItem) => {
+    setShuffleLoading(exam.id);
+    try {
+      const updated = await apiFetch<ExamItem>(`/exams/${exam.id}/shuffle`, {
+        method: "PATCH",
+        body: JSON.stringify({ shuffle: !exam.shuffle_questions }),
+      });
+      setExams((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    } catch (err: any) {
+      alert("Lỗi khi cập nhật trộn câu: " + err.message);
+    } finally {
+      setShuffleLoading(null);
     }
   };
 
@@ -303,8 +339,9 @@ export default function ExamsPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {exams.map((exam) => (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {exams.map((exam) => (
             <div
               key={exam.id}
               className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col justify-between hover:border-slate-300 transition"
@@ -335,6 +372,28 @@ export default function ExamsPage() {
                   <span>Tổng điểm: <strong className="text-slate-900">{exam.total_score} pts</strong></span>
                   <span>{exam.questions?.length || 0} câu hỏi</span>
                 </div>
+
+                {/* Shuffle toggle */}
+                <div className="mt-3">
+                  <button
+                    onClick={() => handleToggleShuffle(exam)}
+                    disabled={shuffleLoading === exam.id}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs font-medium transition ${
+                      exam.shuffle_questions
+                        ? "bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
+                        : "bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100"
+                    } disabled:opacity-50`}
+                  >
+                    <span>Trộn câu hỏi ngẫu nhiên</span>
+                    {shuffleLoading === exam.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${exam.shuffle_questions ? "bg-blue-600 text-white" : "bg-slate-300 text-slate-600"}`}>
+                        {exam.shuffle_questions ? "BẬT" : "TẮT"}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="mt-6 pt-4 border-t border-slate-100 flex items-center gap-2">
@@ -358,7 +417,15 @@ export default function ExamsPage() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+          <Pagination
+            currentPage={currentPage}
+            totalItems={examTotal}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(s) => { setPageSize(s); setCurrentPage(1); }}
+          />
+        </>
       )}
 
       {/* Create Exam Modal */}
@@ -444,6 +511,20 @@ export default function ExamsPage() {
                   />
                 </div>
               </div>
+
+              {/* Shuffle questions toggle */}
+              <label className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50 cursor-pointer hover:bg-blue-50 hover:border-blue-300 transition select-none">
+                <input
+                  type="checkbox"
+                  checked={shuffleQuestions}
+                  onChange={(e) => setShuffleQuestions(e.target.checked)}
+                  className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500 cursor-pointer"
+                />
+                <div>
+                  <span className="text-sm font-medium text-slate-800">Trộn câu hỏi ngẫu nhiên</span>
+                  <p className="text-xs text-slate-500 mt-0.5">Mỗi học viên sẽ nhận được thứ tự câu hỏi khác nhau</p>
+                </div>
+              </label>
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả / Hướng dẫn làm bài</label>

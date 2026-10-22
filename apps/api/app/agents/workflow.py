@@ -1,8 +1,8 @@
 import json
 import logging
 from decimal import Decimal
-from typing import List, Dict, Any
-from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional, Literal
+from pydantic import BaseModel, Field, ConfigDict
 from app.core.config import settings
 from app.schemas.ai_output import (
     AIAssessmentOutput,
@@ -20,10 +20,56 @@ class GeneratedRubricItemAI(BaseModel):
     description: str
     max_points: float
     is_deduction: bool = Field(default=False, description="True nếu là tiêu chí trừ điểm (3 Độc: Tham, Sân, Si)")
-    level_descriptors: Dict[str, float] = Field(default_factory=dict)
 
 class GeneratedRubricListAI(BaseModel):
     rubrics: List[GeneratedRubricItemAI]
+
+
+class PDFOptionAI(BaseModel):
+    content: str
+    is_correct: bool
+    order_index: int
+
+
+class PDFRubricAI(BaseModel):
+    criterion_name: str
+    description: str
+    max_points: float
+    is_deduction: bool = False
+
+
+class GeneratedQuestionAI(BaseModel):
+    type: Literal["single_choice", "multiple_select", "essay"] = Field(
+        description="Loại câu hỏi: 'single_choice', 'multiple_select', hoặc 'essay'"
+    )
+    content: str = Field(description="Nội dung câu hỏi")
+    options: List[PDFOptionAI] = Field(
+        default_factory=list,
+        description="Danh sách đáp án (chỉ cho trắc nghiệm). Để trống [] với câu tự luận."
+    )
+    rubrics: List[PDFRubricAI] = Field(
+        default_factory=list,
+        description="Rubric chấm điểm (chỉ cho tự luận). Để trống [] với câu trắc nghiệm."
+    )
+    explanation: Optional[str] = Field(default=None, description="Giải thích đáp án đúng (tùy chọn)")
+
+
+class GeneratedQuestionListAI(BaseModel):
+    questions: List[GeneratedQuestionAI]
+
+
+PDF_QUESTION_SYSTEM_PROMPT = """
+Bạn là Chuyên gia Khảo thí và Giáo dục. Nhiệm vụ của bạn là đọc nội dung tài liệu PDF được cung cấp và tạo ra ngân hàng câu hỏi kiểm tra chất lượng cao dựa trên nội dung đó.
+
+QUY TẮC BẮT BUỘC:
+1. Câu hỏi PHẢI bám sát nội dung tài liệu, không bịa đặt thông tin ngoài tài liệu.
+2. Với câu trắc nghiệm chọn 1 (single_choice): Tạo đúng 4 đáp án, chỉ 1 đáp án đúng (is_correct=true), 3 đáp án sai (is_correct=false). Đáp án sai phải hợp lý, không quá lộ liễu.
+3. Với câu trắc nghiệm chọn nhiều (multiple_select): Tạo 4-5 đáp án, có từ 2 đến 4 đáp án đúng.
+4. Với câu tự luận (essay): Không cần options. Tạo rubric chấm điểm rõ ràng với các tiêu chí cụ thể.
+5. Câu hỏi phải đa dạng, bao phủ nhiều phần khác nhau của tài liệu.
+6. Ngôn ngữ: Tiếng Việt, rõ ràng, học thuật.
+7. Trả về đúng định dạng JSON theo schema yêu cầu.
+"""
 
 SYSTEM_PROMPT = """
 Bạn là Chuyên gia Khảo thí và Cố vấn Giáo dục nhân cách theo triết lý 3 Gốc (Đạo đức, Trí tuệ, Nghị lực) và 3 Độc (Tham, Sân, Si).
@@ -265,6 +311,240 @@ Hãy xây dựng bộ Rubric chấm điểm AI bám sát triết lý 3 Gốc r�
                 question_content=question_content,
                 total_points=total_points
             )
+
+    async def generate_questions_from_pdf(
+        self,
+        pdf_text: str,
+        single_choice_count: int,
+        multiple_select_count: int,
+        essay_count: int,
+        default_points_single: Decimal,
+        default_points_multiple: Decimal,
+        default_points_essay: Decimal,
+    ) -> List[Dict[str, Any]]:
+        """Generate questions from PDF text using AI."""
+        total = single_choice_count + multiple_select_count + essay_count
+        if total == 0:
+            return []
+
+        if self.is_mock:
+            return self._mock_generate_questions(
+                single_choice_count, multiple_select_count, essay_count,
+                default_points_single, default_points_multiple, default_points_essay
+            )
+
+        # Truncate PDF text to avoid token limits (~12000 chars ≈ ~3000 tokens)
+        truncated_text = pdf_text[:12000] if len(pdf_text) > 12000 else pdf_text
+
+        user_prompt = f"""NỘI DUNG TÀI LIỆU PDF:
+<document>
+{truncated_text}
+</document>
+
+YÊU CẦU TẠO CÂU HỎI:
+- Số câu trắc nghiệm chọn 1 đáp án (single_choice): {single_choice_count}
+- Số câu trắc nghiệm chọn nhiều đáp án (multiple_select): {multiple_select_count}
+- Số câu tự luận (essay): {essay_count}
+- Tổng số câu cần tạo: {total}
+
+Hãy tạo đúng {total} câu hỏi theo yêu cầu trên, bám sát nội dung tài liệu.
+"""
+
+        # Chiến lược 1: Thử dùng OpenAI Structured Outputs (beta.chat.completions.parse)
+        raw_questions_data = None
+        structured_output_error = None
+        try:
+            response = await self.client.beta.chat.completions.parse(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": PDF_QUESTION_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt}
+                ],
+                response_format=GeneratedQuestionListAI,
+                temperature=0.4,
+            )
+            parsed = response.choices[0].message.parsed
+            if parsed and parsed.questions:
+                raw_questions_data = [
+                    {
+                        "type": q.type,
+                        "content": q.content,
+                        "options": [
+                            {"content": opt.content, "is_correct": opt.is_correct, "order_index": opt.order_index}
+                            for opt in q.options
+                        ],
+                        "rubrics": [
+                            {"criterion_name": r.criterion_name, "description": r.description, "max_points": r.max_points, "is_deduction": r.is_deduction}
+                            for r in q.rubrics
+                        ],
+                    }
+                    for q in parsed.questions
+                ]
+        except Exception as e:
+            structured_output_error = e
+            logger.warning(f"Structured Outputs parse failed: {e}. Đang tự động chuyển sang Fallback JSON Mode...", exc_info=True)
+
+        # Chiến lược 2: Fallback sang JSON Mode tiêu chuẩn nếu provider không hỗ trợ JSON Schema Strict Mode
+        if not raw_questions_data:
+            json_user_prompt = f"""{user_prompt}
+
+YÊU CẦU ĐỊNH DẠNG:
+Trả về DUY NHẤT một đối tượng JSON hợp lệ (không kèm markdown ngoài JSON hoặc dùng ```json) với cấu trúc:
+{{
+  "questions": [
+    {{
+      "type": "single_choice" | "multiple_select" | "essay",
+      "content": "Nội dung câu hỏi",
+      "options": [
+        {{"content": "Đáp án", "is_correct": true, "order_index": 0}}
+      ],
+      "rubrics": [
+        {{"criterion_name": "Tên tiêu chí", "description": "Mô tả", "max_points": 2.5, "is_deduction": false}}
+      ],
+      "explanation": "Giải thích (tùy chọn)"
+    }}
+  ]
+}}
+"""
+            try:
+                response = await self.client.chat.completions.create(
+                    model=settings.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": PDF_QUESTION_SYSTEM_PROMPT},
+                        {"role": "user", "content": json_user_prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.4,
+                )
+                content = response.choices[0].message.content or "{}"
+                # Làm sạch markdown nếu có
+                clean_json = content.strip()
+                if clean_json.startswith("```json"):
+                    clean_json = clean_json[7:]
+                if clean_json.startswith("```"):
+                    clean_json = clean_json[3:]
+                if clean_json.endswith("```"):
+                    clean_json = clean_json[:-3]
+                clean_json = clean_json.strip()
+
+                parsed_dict = json.loads(clean_json)
+                q_list = parsed_dict.get("questions") if isinstance(parsed_dict, dict) else (parsed_dict if isinstance(parsed_dict, list) else [])
+                
+                raw_questions_data = []
+                for item in q_list:
+                    raw_questions_data.append({
+                        "type": item.get("type", "single_choice"),
+                        "content": item.get("content", ""),
+                        "options": [
+                            {
+                                "content": str(opt.get("content", "")),
+                                "is_correct": bool(opt.get("is_correct", False)),
+                                "order_index": int(opt.get("order_index", idx))
+                            }
+                            for idx, opt in enumerate(item.get("options") or [])
+                        ],
+                        "rubrics": [
+                            {
+                                "criterion_name": str(r.get("criterion_name", "Tiêu chí")),
+                                "description": str(r.get("description", "")),
+                                "max_points": float(r.get("max_points", 0)),
+                                "is_deduction": bool(r.get("is_deduction", False))
+                            }
+                            for r in item.get("rubrics") or []
+                        ]
+                    })
+            except Exception as e:
+                logger.error(f"Fallback JSON Mode cũng thất bại: {e}", exc_info=True)
+                # Báo lỗi rõ ràng ra ngoài thay vì âm thầm trả về mock
+                raise RuntimeError(
+                    f"Không thể tạo câu hỏi qua LLM ({settings.OPENAI_MODEL}). Lỗi: {str(e)} (Lỗi schema ban đầu: {str(structured_output_error)})"
+                )
+
+        if not raw_questions_data:
+            raise RuntimeError(f"AI ({settings.OPENAI_MODEL}) không trả về danh sách câu hỏi hợp lệ.")
+
+        # Định dạng và gán điểm chuẩn
+        result = []
+        for q in raw_questions_data:
+            q_type = q["type"] if q["type"] in ("single_choice", "multiple_select", "essay") else "single_choice"
+            if q_type == "single_choice":
+                pts = float(default_points_single)
+            elif q_type == "multiple_select":
+                pts = float(default_points_multiple)
+            else:
+                pts = float(default_points_essay)
+
+            options = q.get("options") or []
+            rubrics = [
+                {
+                    "criterion_name": r["criterion_name"],
+                    "description": r.get("description", ""),
+                    "max_points": float(r.get("max_points") or pts),
+                    "is_deduction": bool(r.get("is_deduction", False)),
+                    "level_descriptors": {},
+                }
+                for r in (q.get("rubrics") or [])
+            ]
+
+            result.append({
+                "type": q_type,
+                "content": q["content"],
+                "default_points": pts,
+                "options": options,
+                "rubrics": rubrics,
+            })
+        return result
+
+    @staticmethod
+    def _mock_generate_questions(
+        single_choice_count: int,
+        multiple_select_count: int,
+        essay_count: int,
+        default_points_single: Decimal,
+        default_points_multiple: Decimal,
+        default_points_essay: Decimal,
+    ) -> List[Dict[str, Any]]:
+        """Mock question generation for testing (used when AI_PROVIDER=mock)."""
+        questions = []
+        for i in range(single_choice_count):
+            questions.append({
+                "type": "single_choice",
+                "content": f"[Mock] Câu trắc nghiệm chọn 1 số {i + 1}: Đây là câu hỏi được tạo tự động từ tài liệu PDF?",
+                "default_points": float(default_points_single),
+                "options": [
+                    {"content": "Đáp án A (đúng)", "is_correct": True, "order_index": 0},
+                    {"content": "Đáp án B", "is_correct": False, "order_index": 1},
+                    {"content": "Đáp án C", "is_correct": False, "order_index": 2},
+                    {"content": "Đáp án D", "is_correct": False, "order_index": 3},
+                ],
+                "rubrics": [],
+            })
+        for i in range(multiple_select_count):
+            questions.append({
+                "type": "multiple_select",
+                "content": f"[Mock] Câu trắc nghiệm chọn nhiều số {i + 1}: Những đáp án nào sau đây là đúng?",
+                "default_points": float(default_points_multiple),
+                "options": [
+                    {"content": "Đáp án A (đúng)", "is_correct": True, "order_index": 0},
+                    {"content": "Đáp án B (đúng)", "is_correct": True, "order_index": 1},
+                    {"content": "Đáp án C", "is_correct": False, "order_index": 2},
+                    {"content": "Đáp án D", "is_correct": False, "order_index": 3},
+                ],
+                "rubrics": [],
+            })
+        for i in range(essay_count):
+            pts = float(default_points_essay)
+            questions.append({
+                "type": "essay",
+                "content": f"[Mock] Câu tự luận số {i + 1}: Hãy trình bày hiểu biết của bạn về nội dung chính của tài liệu.",
+                "default_points": pts,
+                "options": [],
+                "rubrics": [
+                    {"criterion_name": "Nội dung", "description": "Trình bày đúng và đầy đủ nội dung", "max_points": round(pts * 0.6, 2), "is_deduction": False, "level_descriptors": {}},
+                    {"criterion_name": "Hình thức", "description": "Diễn đạt rõ ràng, mạch lạc", "max_points": round(pts * 0.4, 2), "is_deduction": False, "level_descriptors": {}},
+                ],
+            })
+        return questions
 
 
 ai_workflow = AIAssessmentWorkflow()

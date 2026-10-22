@@ -63,6 +63,12 @@ async def _run_schema_migrations(conn):
                 "ADD COLUMN IF NOT EXISTS is_deduction BOOLEAN NOT NULL DEFAULT FALSE"
             )
         )
+        await conn.execute(
+            __import__("sqlalchemy").text(
+                "ALTER TABLE exams "
+                "ADD COLUMN IF NOT EXISTS shuffle_questions BOOLEAN NOT NULL DEFAULT FALSE"
+            )
+        )
     elif dialect == "sqlite":
         # SQLite does not support ADD COLUMN IF NOT EXISTS; check first
         result = await conn.execute(
@@ -91,6 +97,17 @@ async def _run_schema_migrations(conn):
             await conn.execute(
                 __import__("sqlalchemy").text(
                     "ALTER TABLE question_rubrics ADD COLUMN is_deduction BOOLEAN NOT NULL DEFAULT 0"
+                )
+            )
+        # Patch: add shuffle_questions to exams if missing
+        res_exams = await conn.execute(
+            __import__("sqlalchemy").text("PRAGMA table_info(exams)")
+        )
+        existing_exams = {row[1] for row in res_exams.fetchall()}
+        if "shuffle_questions" not in existing_exams:
+            await conn.execute(
+                __import__("sqlalchemy").text(
+                    "ALTER TABLE exams ADD COLUMN shuffle_questions BOOLEAN NOT NULL DEFAULT 0"
                 )
             )
 

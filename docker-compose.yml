@@ -41,6 +41,8 @@ services:
       - "8000:8000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - ./apps/api/app:/app/app
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/ck3g_db
       - DATABASE_SYNC_URL=postgresql+psycopg://postgres:postgres@postgres:5432/ck3g_db
@@ -65,6 +67,8 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    volumes:
+      - ./apps/api/app:/app/app
     environment:
       - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/ck3g_db
       - REDIS_URL=redis://redis:6379/0

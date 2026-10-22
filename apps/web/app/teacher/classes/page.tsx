@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { School, Plus, Copy, Check, Users, Loader2, AlertCircle, X } from "lucide-react";
 import { apiFetch } from "../../../lib/api";
+import Pagination from "../../../components/Pagination";
 
 interface ClassItem {
   id: string;
@@ -13,8 +14,17 @@ interface ClassItem {
   student_count: number;
 }
 
+interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
 export default function ClassesPage() {
   const [classes, setClasses] = useState<ClassItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [name, setName] = useState("");
@@ -22,11 +32,18 @@ export default function ClassesPage() {
   const [error, setError] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const loadClasses = async () => {
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const loadClasses = async (page = currentPage, size = pageSize) => {
     try {
       setLoading(true);
-      const data = await apiFetch<ClassItem[]>("/classes");
-      setClasses(data);
+      const data = await apiFetch<PaginatedResponse<ClassItem>>(
+        `/classes?page=${page}&page_size=${size}`
+      );
+      setClasses(data.items);
+      setTotal(data.total);
     } catch (err: any) {
       console.error(err);
     } finally {
@@ -35,8 +52,8 @@ export default function ClassesPage() {
   };
 
   useEffect(() => {
-    loadClasses();
-  }, []);
+    loadClasses(currentPage, pageSize);
+  }, [currentPage, pageSize]);
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
@@ -57,7 +74,8 @@ export default function ClassesPage() {
 
       setShowModal(false);
       setName("");
-      loadClasses();
+      loadClasses(1, pageSize);
+      setCurrentPage(1);
     } catch (err: any) {
       setError(err.message || "Tạo lớp học thất bại.");
     } finally {
@@ -99,8 +117,9 @@ export default function ClassesPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {classes.map((cls) => (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {classes.map((cls) => (
             <div
               key={cls.id}
               className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm hover:border-blue-300 transition flex flex-col justify-between"
@@ -142,7 +161,15 @@ export default function ClassesPage() {
               </div>
             </div>
           ))}
-        </div>
+          </div>
+          <Pagination
+            currentPage={currentPage}
+            totalItems={total}
+            pageSize={pageSize}
+            onPageChange={setCurrentPage}
+            onPageSizeChange={(s) => { setPageSize(s); setCurrentPage(1); }}
+          />
+        </>
       )}
 
       {/* Create Class Modal */}

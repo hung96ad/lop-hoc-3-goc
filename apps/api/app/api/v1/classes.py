@@ -1,13 +1,14 @@
 import secrets
+import math
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.db.session import get_db
 from app.models.classes import Class, Enrollment
 from app.models.exams import ExamAssignment
 from app.models.users import User, UserRole
-from app.schemas.class_schema import ClassCreate, ClassRead, EnrollRequest
+from app.schemas.class_schema import ClassCreate, ClassRead, EnrollRequest, PaginatedResponse
 from app.api.deps import get_current_user, get_current_teacher, get_current_student
 
 router = APIRouter(prefix="/classes", tags=["Classes"])
@@ -34,19 +35,25 @@ async def list_public_classes(db: AsyncSession = Depends(get_db)):
     return output
 
 
-@router.get("", response_model=List[ClassRead])
+@router.get("", response_model=PaginatedResponse[ClassRead])
 async def list_classes(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=200),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     if current_user.role == UserRole.TEACHER.value:
-        query = select(Class).where(Class.teacher_id == current_user.id)
+        base_query = select(Class).where(Class.teacher_id == current_user.id)
     else:
-        query = select(Class).join(Enrollment, Class.id == Enrollment.class_id).where(Enrollment.student_id == current_user.id)
-    
-    result = await db.execute(query)
+        base_query = select(Class).join(Enrollment, Class.id == Enrollment.class_id).where(Enrollment.student_id == current_user.id)
+
+    count_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+    total = count_result.scalar() or 0
+
+    offset = (page - 1) * page_size
+    result = await db.execute(base_query.order_by(Class.created_at.desc()).offset(offset).limit(page_size))
     classes = result.scalars().all()
-    
+
     output = []
     for c in classes:
         cnt_res = await db.execute(select(func.count(Enrollment.id)).where(Enrollment.class_id == c.id))
@@ -59,7 +66,14 @@ async def list_classes(
             created_at=c.created_at,
             student_count=count
         ))
-    return output
+
+    return {
+        "items": output,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": math.ceil(total / page_size) if total > 0 else 1,
+    }
 
 
 @router.post("", response_model=ClassRead)

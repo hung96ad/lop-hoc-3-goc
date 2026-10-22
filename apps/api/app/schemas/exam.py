@@ -1,7 +1,17 @@
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Generic, TypeVar
 from pydantic import BaseModel, Field, ConfigDict
+
+T = TypeVar("T")
+
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    items: List[T]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
 
 
 class ExamQuestionItem(BaseModel):
@@ -17,6 +27,7 @@ class ExamCreate(BaseModel):
     total_score: Decimal = Field(default=Decimal("10.00"), ge=0)
     subject_id: Optional[str] = None
     questions: Optional[List[ExamQuestionItem]] = None
+    shuffle_questions: bool = False
 
 
 class ExamUpdate(BaseModel):
@@ -25,6 +36,7 @@ class ExamUpdate(BaseModel):
     duration_minutes: Optional[int] = None
     total_score: Optional[Decimal] = None
     questions: Optional[List[ExamQuestionItem]] = None
+    shuffle_questions: Optional[bool] = None
 
 
 class ExamQuestionRead(BaseModel):
@@ -46,6 +58,7 @@ class ExamRead(BaseModel):
     status: str
     duration_minutes: int
     total_score: Decimal
+    shuffle_questions: bool
     created_at: datetime
     questions: List[ExamQuestionRead] = []
 

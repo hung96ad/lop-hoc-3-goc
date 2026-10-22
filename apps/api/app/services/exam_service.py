@@ -1,7 +1,8 @@
 from decimal import Decimal
+import math
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 from app.models.exams import Exam, ExamStatus, ExamQuestion, ExamAssignment
@@ -11,12 +12,27 @@ from app.schemas.exam import ExamCreate, ExamUpdate, ExamAssignmentCreate
 
 class ExamService:
     @staticmethod
-    async def list_exams(db: AsyncSession, user_id: str) -> List[Exam]:
-        query = select(Exam).where(Exam.created_by == user_id).options(
+    async def list_exams(db: AsyncSession, user_id: str, page: int = 1, page_size: int = 10) -> dict:
+        base_query = select(Exam).where(Exam.created_by == user_id)
+
+        count_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+        total = count_result.scalar() or 0
+
+        offset = (page - 1) * page_size
+        query = base_query.options(
             selectinload(Exam.questions)
-        )
+        ).order_by(Exam.created_at.desc()).offset(offset).limit(page_size)
+
         result = await db.execute(query)
-        return list(result.scalars().all())
+        items = list(result.scalars().all())
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if total > 0 else 1,
+        }
 
     @staticmethod
     async def get_exam(db: AsyncSession, exam_id: str, user_id: Optional[str] = None) -> Exam:
@@ -42,7 +58,8 @@ class ExamService:
             description=data.description,
             status=ExamStatus.DRAFT.value,
             duration_minutes=data.duration_minutes,
-            total_score=data.total_score
+            total_score=data.total_score,
+            shuffle_questions=data.shuffle_questions
         )
         db.add(exam)
         await db.flush()
@@ -125,6 +142,13 @@ class ExamService:
         exam.status = ExamStatus.PUBLISHED.value
         await db.commit()
         return exam
+
+    @staticmethod
+    async def set_shuffle(db: AsyncSession, exam_id: str, user_id: str, shuffle: bool) -> Exam:
+        exam = await ExamService.get_exam(db, exam_id, user_id)
+        exam.shuffle_questions = shuffle
+        await db.commit()
+        return await ExamService.get_exam(db, exam_id, user_id)
 
     @staticmethod
     async def assign_exam(db: AsyncSession, data: ExamAssignmentCreate, user_id: str) -> ExamAssignment:

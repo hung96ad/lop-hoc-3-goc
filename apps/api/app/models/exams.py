@@ -37,6 +37,7 @@ class Exam(Base, TimestampMixin):
     )
     duration_minutes: Mapped[int] = mapped_column(Integer, default=45, nullable=False)
     total_score: Mapped[Decimal] = mapped_column(Numeric(6, 2), default=Decimal("10.00"), nullable=False)
+    shuffle_questions: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     creator = relationship("User", back_populates="created_exams")

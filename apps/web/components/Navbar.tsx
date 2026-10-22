@@ -79,6 +79,17 @@ export default function Navbar() {
               <School className="h-4 w-4" />
               Lớp học
             </Link>
+            <Link
+              href="/teacher/subjects"
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
+                pathname.startsWith("/teacher/subjects")
+                  ? "bg-blue-50 text-blue-700 font-semibold"
+                  : "text-slate-600 hover:text-blue-600 hover:bg-slate-50"
+              }`}
+            >
+              <GraduationCap className="h-4 w-4" />
+              Môn học
+            </Link>
           </nav>
         )}
 

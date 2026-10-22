@@ -1,9 +1,10 @@
 import io
 import re
+import math
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 import openpyxl
@@ -21,6 +22,7 @@ from app.schemas.question import (
     QuestionImportResult,
     QuestionImportError,
     QuestionRead,
+    GenerateFromPDFResult,
 )
 from app.agents.workflow import ai_workflow
 
@@ -33,34 +35,52 @@ class QuestionService:
         question_type: Optional[str] = None,
         category_id: Optional[str] = None,
         class_id: Optional[str] = None,
-        subject_id: Optional[str] = None
-    ) -> List[Question]:
-        query = select(Question).where(
+        subject_id: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 10,
+    ) -> dict:
+        base_query = select(Question).where(
             Question.created_by == user_id,
             Question.is_active == True
-        ).options(
+        )
+        if question_type and question_type != "all":
+            base_query = base_query.where(Question.type == question_type)
+        if category_id:
+            base_query = base_query.where(Question.category_id == category_id)
+        if subject_id:
+            if subject_id == "unassigned":
+                base_query = base_query.where(Question.subject_id.is_(None))
+            else:
+                base_query = base_query.where(Question.subject_id == subject_id)
+        if class_id:
+            if class_id == "unassigned":
+                base_query = base_query.where(Question.class_id.is_(None))
+            else:
+                base_query = base_query.where(Question.class_id == class_id)
+
+        # Count total
+        count_result = await db.execute(select(func.count()).select_from(base_query.subquery()))
+        total = count_result.scalar() or 0
+
+        # Fetch page
+        offset = (page - 1) * page_size
+        query = base_query.options(
             selectinload(Question.options),
             selectinload(Question.rubrics),
             selectinload(Question.class_obj),
-            selectinload(Question.subject)
-        )
-        if question_type and question_type != "all":
-            query = query.where(Question.type == question_type)
-        if category_id:
-            query = query.where(Question.category_id == category_id)
-        if subject_id:
-            if subject_id == "unassigned":
-                query = query.where(Question.subject_id.is_(None))
-            else:
-                query = query.where(Question.subject_id == subject_id)
-        if class_id:
-            if class_id == "unassigned":
-                query = query.where(Question.class_id.is_(None))
-            else:
-                query = query.where(Question.class_id == class_id)
-            
+            selectinload(Question.subject),
+        ).order_by(Question.created_at.desc()).offset(offset).limit(page_size)
+
         result = await db.execute(query)
-        return list(result.scalars().all())
+        items = list(result.scalars().all())
+
+        return {
+            "items": items,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": math.ceil(total / page_size) if total > 0 else 1,
+        }
 
     @staticmethod
     async def get_question(db: AsyncSession, question_id: str, user_id: str) -> Question:
@@ -236,6 +256,98 @@ class QuestionService:
         return await QuestionService.get_question(db, dup.id, user_id)
 
     @staticmethod
+    async def update_question(db: AsyncSession, question_id: str, data: QuestionUpdate, user_id: str) -> Question:
+        question = await QuestionService.get_question(db, question_id, user_id)
+
+        if data.content is not None:
+            question.content = data.content
+        if data.default_points is not None:
+            question.default_points = data.default_points
+        if data.category_id is not None:
+            question.category_id = data.category_id
+        if data.subject_id is not None:
+            if data.subject_id == "":
+                question.subject_id = None
+            else:
+                subj_res = await db.execute(
+                    select(Subject).where(Subject.id == data.subject_id, Subject.created_by == user_id)
+                )
+                if not subj_res.scalar_one_or_none():
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Môn học được chọn không hợp lệ hoặc bạn không có quyền quản lý."
+                    )
+                question.subject_id = data.subject_id
+        if data.class_id is not None:
+            if data.class_id == "":
+                question.class_id = None
+            else:
+                cls_res = await db.execute(
+                    select(Class).where(Class.id == data.class_id, Class.teacher_id == user_id)
+                )
+                if not cls_res.scalar_one_or_none():
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Lớp học được chọn không hợp lệ hoặc bạn không có quyền quản lý."
+                    )
+                question.class_id = data.class_id
+
+        # Replace options if provided
+        if data.options is not None:
+            for opt in question.options:
+                await db.delete(opt)
+            await db.flush()
+            for idx, opt in enumerate(data.options):
+                db.add(QuestionOption(
+                    question_id=question.id,
+                    content=opt.content,
+                    is_correct=opt.is_correct,
+                    order_index=opt.order_index if opt.order_index else idx,
+                    explanation=opt.explanation or ""
+                ))
+
+        # Replace rubrics if provided
+        if data.rubrics is not None:
+            for rub in question.rubrics:
+                await db.delete(rub)
+            await db.flush()
+            for rub in data.rubrics:
+                db.add(QuestionRubric(
+                    question_id=question.id,
+                    criterion_name=rub.criterion_name,
+                    description=rub.description or "",
+                    max_points=rub.max_points,
+                    is_deduction=getattr(rub, "is_deduction", False),
+                    level_descriptors=rub.level_descriptors,
+                    version=1
+                ))
+
+        question.version = question.version + 1
+        await db.commit()
+        return await QuestionService.get_question(db, question.id, user_id)
+
+    @staticmethod
+    async def delete_question(db: AsyncSession, question_id: str, user_id: str) -> None:
+        question = await QuestionService.get_question(db, question_id, user_id)
+        question.is_active = False
+        await db.commit()
+
+    @staticmethod
+    async def bulk_delete_questions(db: AsyncSession, question_ids: List[str], user_id: str) -> int:
+        from sqlalchemy import update as sa_update
+        result = await db.execute(
+            sa_update(Question)
+            .where(
+                Question.id.in_(question_ids),
+                Question.created_by == user_id,
+                Question.is_active == True
+            )
+            .values(is_active=False)
+        )
+        await db.commit()
+        return result.rowcount
+
+    @staticmethod
     async def generate_rubrics(content: str, total_points: Optional[Decimal] = None) -> List[QuestionRubricCreate]:
         if not content or not content.strip():
             raise HTTPException(
@@ -254,6 +366,133 @@ class QuestionService:
             )
             for r in rubrics_dict
         ]
+
+    @staticmethod
+    async def generate_questions_from_pdf(
+        db: AsyncSession,
+        pdf_bytes: bytes,
+        user_id: str,
+        single_choice_count: int,
+        multiple_select_count: int,
+        essay_count: int,
+        subject_id: Optional[str],
+        class_id: Optional[str],
+        default_points_single: float,
+        default_points_multiple: float,
+        default_points_essay: float,
+    ) -> GenerateFromPDFResult:
+        # Extract text from PDF
+        try:
+            from pypdf import PdfReader
+            reader = PdfReader(io.BytesIO(pdf_bytes))
+            pdf_text = "\n".join(
+                page.extract_text() or "" for page in reader.pages
+            ).strip()
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Không thể đọc file PDF: {str(e)}"
+            )
+
+        if not pdf_text:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File PDF không có nội dung văn bản có thể đọc được (có thể là PDF dạng ảnh scan)."
+            )
+
+        # Validate subject/class ownership
+        if subject_id:
+            subj_res = await db.execute(
+                select(Subject).where(Subject.id == subject_id, Subject.created_by == user_id)
+            )
+            if not subj_res.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Môn học được chọn không hợp lệ."
+                )
+        if class_id:
+            cls_res = await db.execute(
+                select(Class).where(Class.id == class_id, Class.teacher_id == user_id)
+            )
+            if not cls_res.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Lớp học được chọn không hợp lệ."
+                )
+
+        # Generate questions via AI
+        try:
+            generated = await ai_workflow.generate_questions_from_pdf(
+                pdf_text=pdf_text,
+                single_choice_count=single_choice_count,
+                multiple_select_count=multiple_select_count,
+                essay_count=essay_count,
+                default_points_single=Decimal(str(default_points_single)),
+                default_points_multiple=Decimal(str(default_points_multiple)),
+                default_points_essay=Decimal(str(default_points_essay)),
+            )
+        except Exception as ai_err:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Lỗi AI khi đọc PDF và tạo câu hỏi: {str(ai_err)}"
+            )
+
+        # Save generated questions to DB
+        saved_questions = []
+        for q_data in generated:
+            q_type = q_data["type"]
+            pts = Decimal(str(q_data["default_points"]))
+
+            question = Question(
+                subject_id=subject_id,
+                class_id=class_id,
+                created_by=user_id,
+                type=q_type,
+                content=q_data["content"],
+                default_points=pts,
+                version=1,
+                is_active=True,
+            )
+            db.add(question)
+            await db.flush()
+
+            for idx, opt in enumerate(q_data.get("options", [])):
+                db.add(QuestionOption(
+                    question_id=question.id,
+                    content=opt["content"],
+                    is_correct=opt["is_correct"],
+                    order_index=opt.get("order_index", idx),
+                    explanation="",
+                ))
+
+            for rub in q_data.get("rubrics", []):
+                db.add(QuestionRubric(
+                    question_id=question.id,
+                    criterion_name=rub["criterion_name"],
+                    description=rub.get("description", ""),
+                    max_points=Decimal(str(rub["max_points"])),
+                    is_deduction=rub.get("is_deduction", False),
+                    level_descriptors=rub.get("level_descriptors", {}),
+                    version=1,
+                ))
+
+            saved_questions.append(question)
+
+        await db.commit()
+
+        # Reload with relationships
+        result_questions = []
+        for q in saved_questions:
+            loaded = await QuestionService.get_question(db, q.id, user_id)
+            result_questions.append(loaded)
+
+        total_requested = single_choice_count + multiple_select_count + essay_count
+        return GenerateFromPDFResult(
+            total_generated=len(generated),
+            saved_count=len(result_questions),
+            questions=result_questions,
+            message=f"Đã tạo thành công {len(result_questions)}/{total_requested} câu hỏi từ PDF."
+        )
 
     @staticmethod
     def generate_excel_template() -> bytes:
